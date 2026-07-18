@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="LeetLive — Practice LeetCode with AI-powered mock coding interviews, interactive visualizations, and voice interview coaching">
+  <title>LeetLive — AI LeetCode Practice</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- ═══ Header ═══ -->
+  <header id="app-header">
+    <div class="header-left">
+      <div class="logo">
+        <span class="logo-icon">/</span>
+        <span class="logo-text">Leet<span class="accent">Live</span></span>
+      </div>
+    </div>
+    <div class="header-center">
+      <div id="problem-badge" class="problem-badge hidden">
+        <span id="badge-difficulty" class="badge-difficulty"></span>
+        <span id="badge-name" class="badge-name"></span>
+        <span id="badge-category" class="badge-category"></span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div id="live-status" class="live-indicator hidden">
+        <span class="live-dot"></span>
+        <span class="live-label">LIVE</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══ Main Three-Column Layout ═══ -->
+  <main id="app-main">
+    <!-- ── Column 1: Code & Solution (Tabbed) ── -->
+    <section id="col-code" class="column">
+      <div class="column-content">
+        <!-- Tab Bar -->
+        <div class="tab-bar" id="col1-tabs">
+          <button class="tab-btn active" data-tab="code-pad">
+            <svg class="tab-icon" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4.5 3L1.5 8l3 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M11.5 3l3 5-3 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><line x1="9.5" y1="2" x2="6.5" y2="14" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+            Coding Pad
+            <span id="live-sync-indicator" class="live-sync-indicator hidden">
+              <span class="sync-dot"></span>
+            </span>
+          </button>
+          <button class="tab-btn" data-tab="solution">
+            <svg class="tab-icon" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 4l6-2 6 2v6l-6 2-6-2z" stroke="currentColor" stroke-width="1.2"/><path d="M2 4l6 2 6-2M8 6v8" stroke="currentColor" stroke-width="1.2"/></svg>
+            Solution
+          </button>
+          <button class="tab-btn" data-tab="visualize">
+            <svg class="tab-icon" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1v14M1 8h14" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.2"/></svg>
+            Visualize
+          </button>
+          <button class="tab-btn" data-tab="transcript">
+            <svg class="tab-icon" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 3h12v10H2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M5 6h6M5 8.5h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+            Transcript
+          </button>
+        </div>
+
+        <div class="tab-content active" id="tab-code-pad" data-tab="code-pad">
+          <div class="panel panel-full panel-no-header">
+            <div class="code-editor">
+              <div class="line-numbers" id="line-numbers" aria-hidden="true"><span>1</span></div>
+              <textarea
+                id="code-pad"
+                class="code-input"
+                placeholder="Write your solution here...
+
+The interviewer can see your code in real-time.
+Start by defining your approach, then code it up!"
+                spellcheck="false"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+              ></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab Content: Solution -->
+        <div class="tab-content" id="tab-solution" data-tab="solution">
+          <div class="panel panel-full panel-no-header">
+            <div class="panel-header panel-header-inner">
+              <div class="complexity-badges" id="complexity-badges">
+                <span id="time-badge" class="complexity-badge hidden">
+                  <span class="complexity-label">Time</span>
+                  <span id="time-value" class="complexity-value"></span>
+                </span>
+                <span id="space-badge" class="complexity-badge hidden">
+                  <span class="complexity-label">Space</span>
+                  <span id="space-value" class="complexity-value"></span>
+                </span>
+              </div>
+              <button id="btn-solve" class="btn-solve-inline">
+                <svg class="btn-icon-left" width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M6 8h4M8 6v4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                <span>Solve</span>
+              </button>
+            </div>
+            <div class="panel-body">
+              <div id="solution-placeholder" class="placeholder-text">
+                <p>Paste a problem stub in the <strong>Coding Pad</strong> and click <strong>Solve</strong> to see the reference solution</p>
+              </div>
+              <div id="solution-loading" class="loading hidden">
+                <div class="spinner"></div>
+                <p>Gemini is thinking...</p>
+              </div>
+              <pre id="solution-code" class="code-output hidden"><code></code></pre>
+              <div id="solution-explanation" class="explanation hidden"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab Content: Visualize -->
+        <div class="tab-content" id="tab-visualize" data-tab="visualize">
+          <div class="panel panel-full panel-no-header">
+            <div class="panel-header panel-header-inner">
+              <div style="flex:1"></div>
+              <button id="btn-visualize" class="btn-solve-inline">
+                <svg class="btn-icon-left" width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/></svg>
+                <span>Generate</span>
+              </button>
+            </div>
+            <div class="panel-body panel-body-viz">
+              <div id="viz-placeholder" class="placeholder-text">
+                <p>Click <strong>Generate</strong> to create an interactive walkthrough</p>
+              </div>
+              <div id="viz-loading" class="loading hidden">
+                <div class="spinner"></div>
+                <p>Generating visualization...</p>
+              </div>
+              <iframe id="viz-frame" class="viz-iframe hidden" sandbox="allow-scripts allow-same-origin"></iframe>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab Content: Transcript -->
+        <div class="tab-content" id="tab-transcript" data-tab="transcript">
+          <div class="panel panel-full panel-no-header">
+            <div class="panel-body transcript-log-body">
+              <div id="transcript-log" class="transcript-log">
+                <div class="transcript-log-empty">
+                  <p>Start a mock interview to see the conversation transcript here.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom Action Buttons -->
+        <div class="action-bar action-bar-bottom">
+          <button id="btn-clear" class="btn-icon-label" title="Clear">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <span>Clear</span>
+          </button>
+          <div class="action-bar-spacer"></div>
+          <button id="btn-gemini-live" class="btn-live" disabled>
+            <svg class="btn-icon-left" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2a2.5 2.5 0 0 0-2.5 2.5V9a2.5 2.5 0 0 0 5 0V4.5A2.5 2.5 0 0 0 8 2z" stroke="currentColor" stroke-width="1.2"/><path d="M13 8v1a5 5 0 0 1-10 0V8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="8" y1="14" x2="8" y2="15" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+            <span>Mock Interview</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Column 3: Gemini Live ── -->
+    <section id="col-live" class="column column-hidden">
+      <div class="column-content">
+        <div class="panel panel-full">
+          <div class="panel-header">
+            <div class="panel-title">
+              <svg class="panel-icon" width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="5" r="3" stroke="currentColor" stroke-width="1.2"/><path d="M3 14c0-2.8 2.2-5 5-5s5 2.2 5 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+              Interviewer
+            </div>
+            <button id="btn-close-live" class="btn-icon" title="Close live session">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+          <div class="panel-body panel-body-live">
+            <!-- Interviewer Avatar -->
+            <div id="interviewer-avatar" class="interviewer-avatar">
+              <div class="avatar-ring">
+                <div class="avatar-inner">
+                  <svg class="avatar-icon" width="28" height="28" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M4 20c0-3.3 3.6-6 8-6s8 2.7 8 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </div>
+              </div>
+              <div id="audio-visualizer" class="audio-visualizer">
+                <div class="viz-bar"></div>
+                <div class="viz-bar"></div>
+                <div class="viz-bar"></div>
+                <div class="viz-bar"></div>
+                <div class="viz-bar"></div>
+                <div class="viz-bar"></div>
+                <div class="viz-bar"></div>
+              </div>
+            </div>
+
+            <!-- Connection Status -->
+            <div id="live-connection-status" class="connection-status">
+              <span class="status-text">Click to connect</span>
+            </div>
+
+            <!-- Transcript -->
+            <div id="transcript-container" class="transcript-container">
+              <div id="transcript" class="transcript">
+                <div class="transcript-welcome">
+                  <p>Connect to start a mock coding interview.</p>
+                  <p class="transcript-hint">Practice your problem-solving, communication, and coding skills in a realistic interview setting.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Mic Controls -->
+            <div class="live-controls">
+              <button id="btn-connect-live" class="btn-connect">
+                <svg class="btn-icon-left" width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5" stroke="currentColor" stroke-width="1.2"/><path d="M6 6l5 2-5 2z" fill="currentColor"/></svg>
+                <span>Connect</span>
+              </button>
+              <button id="btn-mic" class="btn-mic hidden" disabled>
+                <svg id="mic-icon" width="24" height="24" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" fill="currentColor"/>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  <line x1="12" y1="19" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  <line x1="8" y1="23" x2="16" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+              </button>
+              <button id="btn-disconnect-live" class="btn-disconnect hidden">
+                <span>Disconnect</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>
