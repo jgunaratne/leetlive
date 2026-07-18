@@ -345,5 +345,8 @@ export function initLive() {
   });
 
   btnConnectLive.addEventListener("click", () => connectLive(true));
-  btnDisconnectLive.addEventListener("click", () => disconnectLive(true));
+  btnDisconnectLive.addEventListener("click", () => {
+    disconnectLive(true);
+    document.body.classList.remove("live-open");
+  });
 }
