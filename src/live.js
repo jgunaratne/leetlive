@@ -9,16 +9,22 @@ import { WebSocketServer, WebSocket } from "ws";
 import { Modality } from "@google/genai";
 import { getClient } from "./geminiClient.js";
 import { LIVE_MODEL, LIVE_VOICE } from "./config.js";
-import { INTERVIEWER_SYSTEM_INSTRUCTION } from "./prompts.js";
+import { INTERVIEWER_SYSTEM_INSTRUCTION, PROFESSOR_SYSTEM_INSTRUCTION } from "./prompts.js";
 
 export function attachLiveProxy(server) {
   const wss = new WebSocketServer({ server, path: "/ws/gemini-live" });
-  wss.on("connection", handleBrowserConnection);
+  wss.on("connection", (ws, req) => handleBrowserConnection(ws, req));
   return wss;
 }
 
-function handleBrowserConnection(browserWs) {
-  console.log("[Gemini Live] Browser connected");
+function handleBrowserConnection(browserWs, req) {
+  // Read mode from query parameter (default: "interview")
+  const url = new URL(req.url, "http://localhost");
+  const mode = url.searchParams.get("mode") || "interview";
+  const systemPrompt = mode === "professor"
+    ? PROFESSOR_SYSTEM_INSTRUCTION
+    : INTERVIEWER_SYSTEM_INSTRUCTION;
+  console.log(`[Gemini Live] Browser connected (mode: ${mode})`);
 
   const client = getClient();
   if (!client) {
@@ -33,7 +39,7 @@ function handleBrowserConnection(browserWs) {
     try {
       const sessionConfig = {
         responseModalities: [Modality.AUDIO],
-        systemInstruction: { parts: [{ text: INTERVIEWER_SYSTEM_INSTRUCTION }] },
+        systemInstruction: { parts: [{ text: systemPrompt }] },
         speechConfig: {
           voiceConfig: {
             prebuiltVoiceConfig: { voiceName: LIVE_VOICE },

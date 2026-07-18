@@ -962,6 +962,8 @@ body.live-open #col-live {
   color: var(--text-primary);
   white-space: pre-wrap;
   word-break: break-word;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
 }
 
 .code-output code {
@@ -1106,6 +1108,11 @@ body.live-open #col-live {
 .btn-live:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+}
+
+.btn-professor:hover:not(:disabled) {
+  border-color: rgba(251, 188, 4, 0.5);
+  color: #fbc604;
 }
 
 /* Icon button */

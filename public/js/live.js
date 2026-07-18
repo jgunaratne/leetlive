@@ -28,12 +28,17 @@ import { triggerSolve } from "./solution.js";
 let liveWs = null;
 let isManualDisconnect = false;
 let autoReconnectTimer = null;
+let currentMode = "interview"; // "interview" or "professor"
 
 // Text accumulated for the in-flight interviewer/user turns
 let interviewerText = "";
 let userText = "";
 let shouldResetInterviewer = false;
 let shouldResetUser = false;
+
+// Panel title / icon elements
+const livePanelTitle = document.getElementById("live-panel-title");
+const livePanelIcon = document.getElementById("live-panel-icon");
 
 // ── Connection lifecycle ────────────────────────────────────────────────────
 
@@ -48,7 +53,7 @@ export function connectLive(isUserAction = false) {
   btnConnectLive.disabled = true;
 
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  liveWs = new WebSocket(`${protocol}//${window.location.host}/ws/gemini-live`);
+  liveWs = new WebSocket(`${protocol}//${window.location.host}/ws/gemini-live?mode=${currentMode}`);
 
   liveWs.onopen = () => {
     console.log("[Live] WebSocket connected, waiting for Gemini session...");
@@ -300,21 +305,39 @@ export function sendLiveContext(options = {}) {
 
 // ── UI wiring ───────────────────────────────────────────────────────────────
 
+function updatePanelForMode() {
+  if (livePanelTitle) {
+    livePanelTitle.textContent = currentMode === "professor" ? "Professor" : "Interviewer";
+  }
+}
+
+async function startLiveSession(mode) {
+  // If switching modes while already connected, disconnect first
+  if (liveWs && currentMode !== mode) {
+    disconnectLive();
+  }
+  currentMode = mode;
+  updatePanelForMode();
+  document.body.classList.add("live-open");
+
+  // Auto-solve if there's code but no solution yet
+  if (codePad.value.trim() && !state.currentSolveData) {
+    await triggerSolve();
+  }
+
+  // Auto-connect
+  if (!liveWs) {
+    connectLive(true);
+  }
+}
+
 export function initLive() {
-  btnGeminiLive.addEventListener("click", async () => {
-    document.body.classList.add("live-open");
+  btnGeminiLive.addEventListener("click", () => startLiveSession("interview"));
 
-    // Auto-solve if there's code but no solution yet, so the interviewer
-    // gets full problem context from the very first connection
-    if (codePad.value.trim() && !state.currentSolveData) {
-      await triggerSolve();
-    }
-
-    // Auto-connect so the user doesn't have to click Connect separately
-    if (!liveWs) {
-      connectLive(true);
-    }
-  });
+  const btnProfessor = document.getElementById("btn-professor");
+  if (btnProfessor) {
+    btnProfessor.addEventListener("click", () => startLiveSession("professor"));
+  }
 
   btnCloseLive.addEventListener("click", () => {
     disconnectLive();
