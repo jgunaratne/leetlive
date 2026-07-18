@@ -301,8 +301,19 @@ export function sendLiveContext(options = {}) {
 // ── UI wiring ───────────────────────────────────────────────────────────────
 
 export function initLive() {
-  btnGeminiLive.addEventListener("click", () => {
+  btnGeminiLive.addEventListener("click", async () => {
     document.body.classList.add("live-open");
+
+    // Auto-solve if there's code but no solution yet, so the interviewer
+    // gets full problem context from the very first connection
+    if (codePad.value.trim() && !state.currentSolveData) {
+      await triggerSolve();
+    }
+
+    // Auto-connect so the user doesn't have to click Connect separately
+    if (!liveWs) {
+      connectLive(true);
+    }
   });
 
   btnCloseLive.addEventListener("click", () => {
