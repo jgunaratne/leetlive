@@ -452,6 +452,34 @@ body.live-open #col-live {
   transform: none;
 }
 
+/* ── End Interview Button ─────────────────────────────────── */
+.btn-end-interview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-end-interview:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.btn-end-interview:active {
+  background: rgba(255, 255, 255, 0.04);
+  transform: scale(0.98);
+}
+
 /* ── Clear Button with Label ──────────────────────────────── */
 .btn-icon-label {
   display: flex;

@@ -6,6 +6,7 @@
  */
 
 import { codePad, btnVisualize, btnMic, btnClearTranscript, btnReset } from "./dom.js";
+const btnEndInterview = document.getElementById("btn-end-interview");
 import { state, loadPersistedState, saveState } from "./state.js";
 import { initEditor, updateLineNumbers } from "./editor.js";
 import { initSolve, initClear, renderSolveData, clearProblem } from "./solution.js";
@@ -16,6 +17,7 @@ import { initTimer, resetTimer, ensureTimerRunning } from "./timer.js";
 import { initHistory, saveCurrentSession, startNewSession } from "./history.js";
 import {
   initLive,
+  disconnectLive,
   sendLiveContext,
   sendLiveContextDebounced,
   sendAudioChunk,
@@ -140,6 +142,23 @@ btnClearTranscript.addEventListener("click", () => {
   resetTurnBuffers();
   sendLiveContext();
   saveCurrentSession();
+});
+
+// End Interview — saves the session, disconnects live, clears app, starts fresh
+btnEndInterview.addEventListener("click", async () => {
+  // Disconnect live session if active (gracefully, no error if not connected)
+  try { disconnectLive(); } catch {}
+
+  // Persist everything before wiping the slate
+  await saveCurrentSession();
+
+  // Clear all UI state
+  resetAppState();
+
+  // Start a brand-new session ID so the next problem doesn't overwrite this one
+  startNewSession();
+  saveState();
+  sendLiveContext();
 });
 
 // Reset everything — code, solution, visualization, decision, and transcript —
