@@ -6,11 +6,14 @@
  */
 
 import { codePad, btnVisualize, btnMic, btnClearTranscript, btnReset } from "./dom.js";
-import { state, loadPersistedState } from "./state.js";
+import { state, loadPersistedState, saveState } from "./state.js";
 import { initEditor, updateLineNumbers } from "./editor.js";
 import { initSolve, initClear, renderSolveData, clearProblem } from "./solution.js";
 import { initVisualize, renderViz, resetViz } from "./viz.js";
 import { renderTranscriptLog, clearTranscriptLog } from "./transcript.js";
+import { initDecision, resetDecision } from "./decision.js";
+import { initTimer, resetTimer, ensureTimerRunning } from "./timer.js";
+import { initHistory, saveCurrentSession, startNewSession } from "./history.js";
 import {
   initLive,
   sendLiveContext,
@@ -63,28 +66,93 @@ if (persisted) {
 
 // ── Feature wiring ──────────────────────────────────────────────────────────
 
-initEditor({ onChange: sendLiveContextDebounced });
-initSolve({ onSolved: sendLiveContext });
-initClear({ onCleared: sendLiveContext });
-initVisualize({ onGenerated: sendLiveContext });
+initEditor({
+  onChange: () => {
+    sendLiveContextDebounced();
+    ensureTimerRunning();
+  },
+});
+initSolve({ onSolved: () => { sendLiveContext(); saveCurrentSession(); } });
+initClear({ onCleared: () => { sendLiveContext(); saveCurrentSession(); } });
+initVisualize({ onGenerated: () => { sendLiveContext(); saveCurrentSession(); } });
 initLive();
+initDecision();
+initTimer();
+
+// ── History sidebar ─────────────────────────────────────────────────────────
+
+/**
+ * Full reset: clears all app state back to initial (but does NOT delete
+ * the saved session from the database).
+ */
+function resetAppState() {
+  clearProblem();
+  resetViz();
+  resetDecision();
+  clearTranscriptLog();
+  resetTurnBuffers();
+  resetTimer();
+  updateLineNumbers();
+}
+
+/**
+ * Restore full app state from a loaded session record.
+ */
+function restoreFromSession(session) {
+  resetAppState();
+
+  codePad.value = session.code || "";
+  updateLineNumbers();
+
+  let solveData = null;
+  try { solveData = JSON.parse(session.solve_data || "{}"); } catch {}
+  if (solveData && solveData.solution) {
+    renderSolveData(solveData);
+  }
+
+  let transcript = [];
+  try { transcript = JSON.parse(session.transcript_history || "[]"); } catch {}
+  if (Array.isArray(transcript) && transcript.length) {
+    state.transcriptHistory = transcript;
+    renderTranscriptLog();
+  }
+
+  if (session.viz_html) {
+    state.currentVizHtml = session.viz_html;
+    renderViz(session.viz_html);
+    btnVisualize.disabled = false;
+  }
+
+  saveState();
+}
+
+initHistory({
+  onSessionLoaded: restoreFromSession,
+  onNewSession: () => {
+    resetAppState();
+    saveState();
+  },
+});
 
 // Transcript tab's Clear button — the only thing that resets the transcript
 btnClearTranscript.addEventListener("click", () => {
   clearTranscriptLog();
   resetTurnBuffers();
-  // Let the interviewer know the prior conversation was cleared
   sendLiveContext();
+  saveCurrentSession();
 });
 
-// Reset everything — code, solution, visualization, and transcript — to
-// start fresh on a new problem
+// Reset everything — code, solution, visualization, decision, and transcript —
+// to start fresh on a new problem. Also saves the current session before reset
+// and starts a new one.
 btnReset.addEventListener("click", () => {
   if (!confirm("Reset everything? This clears the code pad, solution, visualization, and interview transcript.")) return;
-  clearProblem();
-  resetViz();
-  clearTranscriptLog();
-  resetTurnBuffers();
+  // Save current work before clearing
+  saveCurrentSession();
+  resetAppState();
+  // Start a new session for the blank slate
+  startNewSession();
+  saveState();
   sendLiveContext();
 });
 
@@ -95,6 +163,13 @@ btnMic.addEventListener("click", () => {
   } else {
     startMic(sendAudioChunk);
   }
+});
+
+// Auto-save to backend periodically when the user types
+let autoSaveTimer = null;
+codePad.addEventListener("input", () => {
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => saveCurrentSession(), 5000);
 });
 
 updateLineNumbers();

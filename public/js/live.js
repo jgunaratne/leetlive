@@ -23,6 +23,7 @@ import { state } from "./state.js";
 import { initCaption, updateCaption, appendToTranscriptLog } from "./transcript.js";
 import { playAudio, startMic, stopMic, resetPlayback } from "./audio.js";
 import { extractVizDescription } from "./viz.js";
+import { triggerSolve } from "./solution.js";
 
 let liveWs = null;
 let isManualDisconnect = false;
@@ -147,9 +148,15 @@ function handleLiveMessage(msg) {
         interviewerText = "";
         userText = "";
         initCaption();
-        // Send full problem context (including the entire transcript so far)
-        // now that the Gemini session is ready
-        sendLiveContext();
+        // Auto-solve if there's code but no solution yet, so the
+        // interviewer has full problem context from the start
+        if (codePad.value.trim() && !state.currentSolveData) {
+          triggerSolve().then(() => sendLiveContext());
+        } else {
+          // Send full problem context (including the entire transcript so far)
+          // now that the Gemini session is ready
+          sendLiveContext();
+        }
         // Start mic automatically
         startMic(sendAudioChunk);
       } else if (msg.status === "idle") {
