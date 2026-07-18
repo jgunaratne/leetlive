@@ -126,6 +126,15 @@ export function initTimer() {
     }
   });
 
+  // Reset timer on click
+  const timerResetBtn = document.getElementById("timer-reset");
+  if (timerResetBtn) {
+    timerResetBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      resetTimer();
+    });
+  }
+
   restore();
   render();
 }
