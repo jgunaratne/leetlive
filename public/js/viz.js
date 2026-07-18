@@ -9,11 +9,37 @@ import { codePad, btnVisualize, vizPlaceholder, vizLoading, vizFrame } from "./d
 import { state, saveState } from "./state.js";
 import { escapeHtml } from "./util.js";
 
+const btnRegenViz = document.getElementById("btn-regen-viz");
+
+/**
+ * Client-side safety net: strip markdown fences and unescape entities
+ * in case the server-side sanitizer misses something.
+ */
+function cleanHtml(raw) {
+  if (!raw) return "";
+  let html = raw.trim();
+
+  // Strip markdown code fences
+  html = html.replace(/^```(?:html|HTML)?\s*\n?/, "").replace(/\n?```\s*$/, "");
+
+  // Unescape double-encoded entities
+  if (!/<[a-zA-Z]/.test(html)) {
+    const txt = document.createElement("textarea");
+    txt.innerHTML = html;
+    html = txt.value;
+  }
+
+  return html;
+}
+
 export function renderViz(html) {
+  const cleaned = cleanHtml(html);
   vizPlaceholder.classList.add("hidden");
   vizLoading.classList.add("hidden");
   vizFrame.classList.remove("hidden");
-  vizFrame.srcdoc = html;
+  vizFrame.srcdoc = cleaned;
+  // Show regenerate button when a visualization is displayed
+  if (btnRegenViz) btnRegenViz.classList.remove("hidden");
 }
 
 export function resetViz() {
@@ -24,46 +50,56 @@ export function resetViz() {
   vizPlaceholder.innerHTML = `
     <p>Click <strong>Generate</strong> to create an interactive walkthrough</p>
   `;
+  if (btnRegenViz) btnRegenViz.classList.add("hidden");
+}
+
+async function generateViz(onGenerated) {
+  vizPlaceholder.classList.add("hidden");
+  vizFrame.classList.add("hidden");
+  vizLoading.classList.remove("hidden");
+  btnVisualize.disabled = true;
+  if (btnRegenViz) btnRegenViz.disabled = true;
+
+  try {
+    const res = await fetch("/api/visualize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        codeStub: codePad.value.trim(),
+        solution: state.currentSolution,
+        problemName: state.currentProblemName,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Failed to generate visualization");
+    }
+
+    const data = await res.json();
+    renderViz(data.html);
+    state.currentVizHtml = data.html;
+    saveState();
+    onGenerated?.();
+  } catch (err) {
+    vizLoading.classList.add("hidden");
+    vizPlaceholder.classList.remove("hidden");
+    vizPlaceholder.innerHTML = `
+      <p style="color: var(--color-error)">${escapeHtml(err.message)}</p>
+    `;
+  } finally {
+    btnVisualize.disabled = false;
+    if (btnRegenViz) btnRegenViz.disabled = false;
+  }
 }
 
 export function initVisualize({ onGenerated } = {}) {
-  btnVisualize.addEventListener("click", async () => {
-    vizPlaceholder.classList.add("hidden");
-    vizFrame.classList.add("hidden");
-    vizLoading.classList.remove("hidden");
-    btnVisualize.disabled = true;
+  btnVisualize.addEventListener("click", () => generateViz(onGenerated));
 
-    try {
-      const res = await fetch("/api/visualize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          codeStub: codePad.value.trim(),
-          solution: state.currentSolution,
-          problemName: state.currentProblemName,
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Failed to generate visualization");
-      }
-
-      const data = await res.json();
-      renderViz(data.html);
-      state.currentVizHtml = data.html;
-      saveState();
-      onGenerated?.();
-    } catch (err) {
-      vizLoading.classList.add("hidden");
-      vizPlaceholder.classList.remove("hidden");
-      vizPlaceholder.innerHTML = `
-        <p style="color: var(--color-error)">${escapeHtml(err.message)}</p>
-      `;
-    } finally {
-      btnVisualize.disabled = false;
-    }
-  });
+  // Regenerate button — same logic, just triggers a fresh generation
+  if (btnRegenViz) {
+    btnRegenViz.addEventListener("click", () => generateViz(onGenerated));
+  }
 }
 
 // Extracts text descriptions, labels, and structure from the viz HTML so the

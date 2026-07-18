@@ -69,45 +69,50 @@ export function renderSolveData(data) {
   btnGeminiLive.disabled = false;
 }
 
-export function initSolve({ onSolved } = {}) {
-  btnSolve.addEventListener("click", async () => {
-    const stub = codePad.value.trim();
-    if (!stub) return;
+let _onSolved = null;
 
-    solutionPlaceholder.classList.add("hidden");
-    solutionCode.classList.add("hidden");
-    solutionExplanation.classList.add("hidden");
-    solutionLoading.classList.remove("hidden");
-    timeBadge.classList.add("hidden");
-    spaceBadge.classList.add("hidden");
-    btnSolve.disabled = true;
+export async function triggerSolve() {
+  const stub = codePad.value.trim();
+  if (!stub) return;
 
-    try {
-      const res = await fetch("/api/solve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ codeStub: stub }),
-      });
+  solutionPlaceholder.classList.add("hidden");
+  solutionCode.classList.add("hidden");
+  solutionExplanation.classList.add("hidden");
+  solutionLoading.classList.remove("hidden");
+  timeBadge.classList.add("hidden");
+  spaceBadge.classList.add("hidden");
+  btnSolve.disabled = true;
 
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Failed to solve");
-      }
+  try {
+    const res = await fetch("/api/solve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ codeStub: stub }),
+    });
 
-      const data = await res.json();
-      renderSolveData(data);
-      saveState();
-      onSolved?.();
-    } catch (err) {
-      solutionLoading.classList.add("hidden");
-      solutionPlaceholder.classList.remove("hidden");
-      solutionPlaceholder.innerHTML = `
-        <p style="color: var(--color-error)">${escapeHtml(err.message)}</p>
-      `;
-    } finally {
-      btnSolve.disabled = false;
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Failed to solve");
     }
-  });
+
+    const data = await res.json();
+    renderSolveData(data);
+    saveState();
+    _onSolved?.();
+  } catch (err) {
+    solutionLoading.classList.add("hidden");
+    solutionPlaceholder.classList.remove("hidden");
+    solutionPlaceholder.innerHTML = `
+      <p style="color: var(--color-error)">${escapeHtml(err.message)}</p>
+    `;
+  } finally {
+    btnSolve.disabled = false;
+  }
+}
+
+export function initSolve({ onSolved } = {}) {
+  _onSolved = onSolved || null;
+  btnSolve.addEventListener("click", () => triggerSolve());
 }
 
 // Clears the code pad, solve results, and problem badge back to the initial
