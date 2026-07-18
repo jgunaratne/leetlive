@@ -30,6 +30,10 @@ function ensureAudioContext() {
 
 export function resetPlayback() {
   nextPlayTime = 0;
+  if (audioContext && audioContext.state !== "closed") {
+    audioContext.close().catch(() => {});
+    audioContext = null;
+  }
 }
 
 export function playAudio(base64Data, mimeType) {
