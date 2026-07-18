@@ -151,11 +151,11 @@ function handleLiveMessage(msg) {
         // Auto-solve if there's code but no solution yet, so the
         // interviewer has full problem context from the start
         if (codePad.value.trim() && !state.currentSolveData) {
-          triggerSolve().then(() => sendLiveContext());
+          triggerSolve().then(() => sendLiveContext({ turnComplete: true }));
         } else {
-          // Send full problem context (including the entire transcript so far)
-          // now that the Gemini session is ready
-          sendLiveContext();
+          // Send full problem context as a completed turn so Gemini
+          // processes it before the voice conversation begins
+          sendLiveContext({ turnComplete: true });
         }
         // Start mic automatically
         startMic(sendAudioChunk);
