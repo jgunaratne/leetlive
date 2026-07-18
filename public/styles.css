@@ -134,6 +134,10 @@ body::before {
   align-items: center;
 }
 
+.header-right {
+  gap: var(--space-md);
+}
+
 .header-center {
   flex: 1;
   justify-content: center;
