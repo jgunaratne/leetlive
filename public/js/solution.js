@@ -10,7 +10,6 @@ import {
   btnSolve,
   btnClear,
   btnVisualize,
-  btnGeminiLive,
   solutionPlaceholder,
   solutionLoading,
   solutionCode,
@@ -66,7 +65,6 @@ export function renderSolveData(data) {
   }
 
   btnVisualize.disabled = false;
-  btnGeminiLive.disabled = false;
 }
 
 let _onSolved = null;
@@ -135,7 +133,6 @@ export function clearProblem() {
     <p>Paste a problem stub in the <strong>Coding Pad</strong> and click <strong>Solve</strong> to see the reference solution</p>
   `;
   btnVisualize.disabled = true;
-  btnGeminiLive.disabled = true;
 
   saveState();
   updateLineNumbers();
