@@ -22,7 +22,7 @@ import {
 import { state } from "./state.js";
 import { initCaption, updateCaption, appendToTranscriptLog } from "./transcript.js";
 import { playAudio, startMic, stopMic, resetPlayback, flushPlayback } from "./audio.js";
-import { extractVizDescription } from "./viz.js";
+import { codeBlock, solutionBlocks, vizBlock, historyBlock } from "./workspace.js";
 import { triggerSolve } from "./solution.js";
 
 let liveWs = null;
@@ -365,41 +365,36 @@ export function sendLiveContext(options = {}) {
   const code = codePad.value;
   const solveKey = state.currentSolveData ? JSON.stringify(state.currentSolveData) : null;
   const vizKey = state.currentVizHtml || null;
+  const isProfessor = currentMode === "professor";
+  const who = isProfessor ? "Student" : "Candidate";
 
   if (code.trim() && code !== sentContext.code) {
-    // Prefix each line with the same 1-based number shown in the editor gutter
-    // so the interviewer can reference lines the way the candidate sees them.
-    const numbered = code
-      .split("\n")
-      .map((line, i) => `${String(i + 1).padStart(3)}| ${line}`)
-      .join("\n");
-    parts.push(`## Candidate's Current Code\nEach line is prefixed with its line number followed by "|" (e.g. "  3| "). These numbers match the editor gutter the candidate sees — use them when referring to specific lines. They are not part of the code.\n\`\`\`\n${numbered}\n\`\`\``);
+    parts.push(codeBlock(code, who));
   }
 
   if (solveKey && solveKey !== sentContext.solve) {
-    const d = state.currentSolveData;
-    parts.push(`## Problem Info\nName: ${d.problemName || "Unknown"}\nDifficulty: ${d.difficulty || "Unknown"}\nCategory: ${d.category || "Unknown"}`);
-    parts.push(`## Approach\n${d.approach || "N/A"}`);
-    parts.push(`## Solution Code\n${d.solution || "N/A"}`);
-    parts.push(`## Complexity\nTime: ${d.timeComplexity || "N/A"}\nSpace: ${d.spaceComplexity || "N/A"}`);
-    if (d.explanation) {
-      parts.push(`## Detailed Explanation\n${d.explanation}`);
-    }
+    parts.push(...solutionBlocks(state.currentSolveData));
   }
 
   if (vizKey && vizKey !== sentContext.viz) {
-    const vizText = extractVizDescription(vizKey);
-    parts.push(`## Interactive Visualization\nThe candidate has an interactive visualization open that shows a step-by-step walkthrough of this algorithm.\n\n${vizText}`);
+    parts.push(vizBlock(vizKey, who.toLowerCase()));
   }
 
   // Replay the conversation only when the model has no memory of it — i.e. on a
   // cold session. A resumed session already holds the whole exchange.
   if (!sentContext.history && state.transcriptHistory.length > 0) {
-    const historyLines = state.transcriptHistory.map((h) => {
-      const speaker = h.role === "user" ? "Candidate" : "Interviewer";
-      return `[${speaker}]: ${h.text}`;
-    }).join("\n");
-    parts.push(`## Previous Interview Conversation History\nThis session is a continuation of the mock interview. Here is what was previously discussed:\n${historyLines}`);
+    parts.push(
+      historyBlock(state.transcriptHistory, {
+        who,
+        assistant: isProfessor ? "Professor" : "Interviewer",
+        heading: isProfessor
+          ? "Previous Tutoring Conversation History"
+          : "Previous Interview Conversation History",
+        intro: isProfessor
+          ? "This session is a continuation of the tutoring session. Here is what was previously discussed:"
+          : "This session is a continuation of the mock interview. Here is what was previously discussed:",
+      })
+    );
   }
 
   if (parts.length === 0) {

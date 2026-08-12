@@ -12,6 +12,7 @@ export const state = {
   currentSolveData: null,
   currentVizHtml: null,
   transcriptHistory: [], // { role: "user" | "interviewer", text: string, time: string }
+  chatHistory: [], // { role: "user" | "assistant", text: string, time: string }
 };
 
 export function saveState() {
@@ -20,6 +21,7 @@ export function saveState() {
     solveData: state.currentSolveData,
     vizHtml: state.currentVizHtml,
     transcriptHistory: state.transcriptHistory,
+    chatHistory: state.chatHistory,
   };
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));

@@ -22,11 +22,19 @@ db.exec(`
     solve_data TEXT DEFAULT '{}',
     viz_html TEXT DEFAULT '',
     transcript_history TEXT DEFAULT '[]',
+    chat_history TEXT DEFAULT '[]',
     timer_seconds INTEGER DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
 `);
+
+// Databases created before the professor chat existed are missing chat_history;
+// CREATE TABLE IF NOT EXISTS won't add it, so patch the column in by hand.
+const columns = db.prepare(`PRAGMA table_info(sessions)`).all().map((c) => c.name);
+if (!columns.includes("chat_history")) {
+  db.exec(`ALTER TABLE sessions ADD COLUMN chat_history TEXT DEFAULT '[]'`);
+}
 
 const stmtGetAll = db.prepare(`
   SELECT id, problem_name, difficulty, category, created_at, updated_at
@@ -40,9 +48,9 @@ const stmtGetById = db.prepare(`
 
 const stmtUpsert = db.prepare(`
   INSERT OR REPLACE INTO sessions
-    (id, problem_name, difficulty, category, code, solve_data, viz_html, transcript_history, timer_seconds, created_at, updated_at)
+    (id, problem_name, difficulty, category, code, solve_data, viz_html, transcript_history, chat_history, timer_seconds, created_at, updated_at)
   VALUES
-    (@id, @problem_name, @difficulty, @category, @code, @solve_data, @viz_html, @transcript_history, @timer_seconds, @created_at, @updated_at)
+    (@id, @problem_name, @difficulty, @category, @code, @solve_data, @viz_html, @transcript_history, @chat_history, @timer_seconds, @created_at, @updated_at)
 `);
 
 const stmtDelete = db.prepare(`DELETE FROM sessions WHERE id = ?`);
@@ -68,6 +76,7 @@ export function upsertSession(session) {
     solve_data: session.solve_data ?? "{}",
     viz_html: session.viz_html ?? "",
     transcript_history: session.transcript_history ?? "[]",
+    chat_history: session.chat_history ?? "[]",
     timer_seconds: session.timer_seconds ?? 0,
     created_at: session.created_at || now,
     updated_at: now,

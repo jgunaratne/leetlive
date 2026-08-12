@@ -13,11 +13,12 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-import { PORT, CERT_DIR, FLASH_MODEL, LIVE_MODEL, GEMINI_API_KEY, GOOGLE_CLOUD_PROJECT } from "./config.js";
+import { PORT, CERT_DIR, FLASH_MODEL, LIVE_MODEL, CHAT_MODEL, GEMINI_API_KEY, GOOGLE_CLOUD_PROJECT } from "./config.js";
 import { solveRouter } from "./routes/solve.js";
 import { visualizeRouter } from "./routes/visualize.js";
 import { decisionRouter } from "./routes/decision.js";
 import { sessionsRouter } from "./routes/sessions.js";
+import { chatRouter } from "./routes/chat.js";
 import { attachLiveProxy } from "./live.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -29,6 +30,7 @@ app.use(solveRouter);
 app.use(visualizeRouter);
 app.use(decisionRouter);
 app.use(sessionsRouter);
+app.use(chatRouter);
 
 // Prefer HTTPS: microphone access (getUserMedia) requires a secure context on
 // any origin other than localhost. If certs/cert.pem + certs/key.pem exist we
@@ -49,6 +51,7 @@ server.listen(PORT, () => {
   console.log(`\n🚀 LeetLive running at ${scheme}://localhost:${PORT}\n`);
   console.log(`   Gemini Flash model: ${FLASH_MODEL}`);
   console.log(`   Gemini Live model:  ${LIVE_MODEL}`);
+  console.log(`   Gemini Chat model:  ${CHAT_MODEL}`);
   console.log(`   Auth: ${GEMINI_API_KEY ? "API Key" : GOOGLE_CLOUD_PROJECT ? "Vertex AI" : "⚠️  NOT CONFIGURED"}`);
   console.log();
 });
