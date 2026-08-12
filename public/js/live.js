@@ -21,7 +21,7 @@ import {
 } from "./dom.js";
 import { state } from "./state.js";
 import { initCaption, updateCaption, appendToTranscriptLog } from "./transcript.js";
-import { playAudio, startMic, stopMic, resetPlayback } from "./audio.js";
+import { playAudio, startMic, stopMic, resetPlayback, flushPlayback } from "./audio.js";
 import { extractVizDescription } from "./viz.js";
 import { triggerSolve } from "./solution.js";
 
@@ -29,6 +29,29 @@ let liveWs = null;
 let isManualDisconnect = false;
 let autoReconnectTimer = null;
 let currentMode = "interview"; // "interview" or "professor"
+
+// Handle from the most recent resumption checkpoint. Passed back on reconnect so
+// the model keeps the conversation instead of restarting cold.
+let resumptionHandle = null;
+let reconnectAttempts = 0;
+
+const RECONNECT_BASE_MS = 800;
+const RECONNECT_MAX_MS = 15000;
+
+// Snapshot of what the model has already been told, so context updates only
+// carry what actually changed. Re-sending the full problem + solution +
+// transcript on every edit bloats the session context and makes replies
+// progressively slower.
+let sentContext = emptySentContext();
+
+// True between the first audio chunk of a model turn and its turnComplete.
+// Pushing context mid-turn confuses the model, so updates wait.
+let modelSpeaking = false;
+let contextUpdatePending = false;
+
+function emptySentContext() {
+  return { code: null, solve: null, viz: null, history: false };
+}
 
 // Text accumulated for the in-flight interviewer/user turns
 let interviewerText = "";
@@ -49,11 +72,19 @@ export function connectLive(isUserAction = false) {
     isManualDisconnect = false;
   }
 
+  if (isUserAction) {
+    // A deliberate connect starts a new conversation — drop any stale handle.
+    resumptionHandle = null;
+    reconnectAttempts = 0;
+  }
+
   statusText.textContent = isUserAction ? "Connecting..." : "Reconnecting...";
   btnConnectLive.disabled = true;
 
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  liveWs = new WebSocket(`${protocol}//${window.location.host}/ws/gemini-live?mode=${currentMode}`);
+  const params = new URLSearchParams({ mode: currentMode });
+  if (resumptionHandle) params.set("resume", resumptionHandle);
+  liveWs = new WebSocket(`${protocol}//${window.location.host}/ws/gemini-live?${params}`);
 
   liveWs.onopen = () => {
     console.log("[Live] WebSocket connected, waiting for Gemini session...");
@@ -79,6 +110,7 @@ export function connectLive(isUserAction = false) {
 
 export function disconnectLive(manual = true) {
   isManualDisconnect = manual;
+  if (manual) resumptionHandle = null;
   if (liveWs) {
     // Remove handlers to prevent duplicate calls
     liveWs.onclose = null;
@@ -102,27 +134,49 @@ function cleanupLiveSession() {
     userText = "";
   }
 
+  if (liveWs) {
+    // Drop handlers first so closing doesn't re-enter cleanup, then actually
+    // close — leaving the socket open leaks a proxy session per reconnect.
+    liveWs.onclose = null;
+    liveWs.onerror = null;
+    liveWs.onmessage = null;
+    try { liveWs.close(); } catch {}
+  }
   liveWs = null;
+
   stopMic();
+  modelSpeaking = false;
+  contextUpdatePending = false;
+  sentContext = emptySentContext();
   document.body.classList.remove("live-connected", "interviewer-speaking");
   liveStatus.classList.add("hidden");
   btnConnectLive.classList.remove("hidden");
   btnConnectLive.disabled = false;
   btnDisconnectLive.classList.add("hidden");
   btnMic.classList.add("hidden");
+  if (liveSyncIndicator) liveSyncIndicator.classList.add("hidden");
   resetPlayback();
+
+  clearTimeout(autoReconnectTimer);
+  clearTimeout(liveContextTimer);
 
   if (isManualDisconnect) {
     statusText.textContent = "Click to connect";
-    clearTimeout(autoReconnectTimer);
+    reconnectAttempts = 0;
   } else {
+    // Back off so a server-side outage isn't hammered once a second, but stay
+    // fast for the common case of a single dropped connection.
+    const delay = Math.min(
+      RECONNECT_BASE_MS * 2 ** reconnectAttempts,
+      RECONNECT_MAX_MS
+    );
+    reconnectAttempts++;
     statusText.textContent = "Connection lost. Reconnecting automatically...";
-    clearTimeout(autoReconnectTimer);
     autoReconnectTimer = setTimeout(() => {
       if (!isManualDisconnect && !liveWs) {
         connectLive(false);
       }
-    }, 1500);
+    }, delay);
   }
 }
 
@@ -141,6 +195,7 @@ function handleLiveMessage(msg) {
   switch (msg.type) {
     case "status":
       if (msg.status === "connected") {
+        reconnectAttempts = 0;
         document.body.classList.add("live-connected");
         liveStatus.classList.remove("hidden");
         btnConnectLive.classList.add("hidden");
@@ -153,6 +208,16 @@ function handleLiveMessage(msg) {
         interviewerText = "";
         userText = "";
         initCaption();
+
+        if (msg.resumed) {
+          // The model still holds the conversation, so skip the history replay
+          // and just sync the workspace — without prompting a fresh reply.
+          sentContext.history = true;
+          sendLiveContext({ turnComplete: false });
+          startMic(sendAudioChunk);
+          break;
+        }
+
         // Auto-solve if there's code but no solution yet, so the
         // interviewer has full problem context from the start
         if (codePad.value.trim() && !state.currentSolveData) {
@@ -169,28 +234,49 @@ function handleLiveMessage(msg) {
       }
       break;
 
+    case "resumptionHandle":
+      resumptionHandle = msg.handle;
+      break;
+
+    case "goAway":
+      // Gemini is about to drop us. Reconnect now, from the latest checkpoint,
+      // instead of waiting for the socket to die mid-sentence.
+      console.log("[Live] GoAway — reconnecting early:", msg.timeLeft);
+      reconnectAttempts = 0;
+      disconnectLive(false);
+      break;
+
     case "audio":
       playAudio(msg.data, msg.mimeType);
+      modelSpeaking = true;
       document.body.classList.add("interviewer-speaking");
       break;
 
     case "turnComplete":
       document.body.classList.remove("interviewer-speaking");
+      modelSpeaking = false;
       // Log the completed interviewer turn to transcript
       if (interviewerText.trim()) {
         appendToTranscriptLog("interviewer", interviewerText.trim());
       }
       // Next time the interviewer speaks, reset the caption text
       shouldResetInterviewer = true;
+      flushPendingContext();
       break;
 
     case "interrupted":
       document.body.classList.remove("interviewer-speaking");
+      modelSpeaking = false;
+      // Drop the audio Gemini already streamed for this turn — it arrives well
+      // ahead of playback, so without this the interviewer keeps talking for
+      // seconds after being interrupted.
+      flushPlayback();
       // Log whatever was said before interruption
       if (interviewerText.trim()) {
         appendToTranscriptLog("interviewer", interviewerText.trim());
       }
       shouldResetInterviewer = true;
+      flushPendingContext();
       break;
 
     case "inputTranscription":
@@ -250,23 +336,47 @@ export function sendLiveContextDebounced() {
   }
 }
 
+function flushPendingContext() {
+  if (!contextUpdatePending) return;
+  contextUpdatePending = false;
+  sendLiveContext({ turnComplete: false });
+}
+
+/**
+ * Push context to the interviewer, sending only what has changed since the last
+ * push. The solution, explanation and transcript history run to thousands of
+ * tokens; re-sending them on every keystroke burst is what makes replies drift
+ * from snappy to sluggish over the course of an interview.
+ */
 export function sendLiveContext(options = {}) {
   if (!liveWs || liveWs.readyState !== WebSocket.OPEN) return;
 
   const turnComplete = options.turnComplete === true;
-  const parts = [];
 
-  if (codePad.value.trim()) {
+  // Never interrupt the interviewer mid-answer with a code update; hold it
+  // until the turn ends. A turn-completing send is the caller asking for a
+  // reply, so that one goes through regardless.
+  if (!turnComplete && modelSpeaking) {
+    contextUpdatePending = true;
+    return;
+  }
+
+  const parts = [];
+  const code = codePad.value;
+  const solveKey = state.currentSolveData ? JSON.stringify(state.currentSolveData) : null;
+  const vizKey = state.currentVizHtml || null;
+
+  if (code.trim() && code !== sentContext.code) {
     // Prefix each line with the same 1-based number shown in the editor gutter
     // so the interviewer can reference lines the way the candidate sees them.
-    const numbered = codePad.value
+    const numbered = code
       .split("\n")
       .map((line, i) => `${String(i + 1).padStart(3)}| ${line}`)
       .join("\n");
     parts.push(`## Candidate's Current Code\nEach line is prefixed with its line number followed by "|" (e.g. "  3| "). These numbers match the editor gutter the candidate sees — use them when referring to specific lines. They are not part of the code.\n\`\`\`\n${numbered}\n\`\`\``);
   }
 
-  if (state.currentSolveData) {
+  if (solveKey && solveKey !== sentContext.solve) {
     const d = state.currentSolveData;
     parts.push(`## Problem Info\nName: ${d.problemName || "Unknown"}\nDifficulty: ${d.difficulty || "Unknown"}\nCategory: ${d.category || "Unknown"}`);
     parts.push(`## Approach\n${d.approach || "N/A"}`);
@@ -277,14 +387,14 @@ export function sendLiveContext(options = {}) {
     }
   }
 
-  if (state.currentVizHtml) {
-    const vizText = extractVizDescription(state.currentVizHtml);
+  if (vizKey && vizKey !== sentContext.viz) {
+    const vizText = extractVizDescription(vizKey);
     parts.push(`## Interactive Visualization\nThe candidate has an interactive visualization open that shows a step-by-step walkthrough of this algorithm.\n\n${vizText}`);
   }
 
-  // Include the full conversation history so a reconnected session picks up
-  // exactly where the interview left off
-  if (state.transcriptHistory.length > 0) {
+  // Replay the conversation only when the model has no memory of it — i.e. on a
+  // cold session. A resumed session already holds the whole exchange.
+  if (!sentContext.history && state.transcriptHistory.length > 0) {
     const historyLines = state.transcriptHistory.map((h) => {
       const speaker = h.role === "user" ? "Candidate" : "Interviewer";
       return `[${speaker}]: ${h.text}`;
@@ -293,6 +403,12 @@ export function sendLiveContext(options = {}) {
   }
 
   if (parts.length === 0) {
+    // Nothing changed. Staying quiet keeps the session small and avoids nudging
+    // the model into an unprompted reply.
+    if (!turnComplete) {
+      if (liveSyncIndicator) liveSyncIndicator.classList.add("hidden");
+      return;
+    }
     parts.push("The candidate has not loaded a problem yet. Ask them what LeetCode problem they'd like to practice.");
   }
 
@@ -301,6 +417,9 @@ export function sendLiveContext(options = {}) {
     text: parts.join("\n\n"),
     turnComplete,
   }));
+
+  sentContext = { code, solve: solveKey, viz: vizKey, history: true };
+  if (liveSyncIndicator) liveSyncIndicator.classList.add("hidden");
 }
 
 // ── UI wiring ───────────────────────────────────────────────────────────────
