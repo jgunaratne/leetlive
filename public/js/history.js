@@ -119,6 +119,7 @@ async function saveCurrentSession() {
     solve_data: JSON.stringify(state.currentSolveData || {}),
     viz_html: state.currentVizHtml || "",
     transcript_history: JSON.stringify(state.transcriptHistory || []),
+    chat_history: JSON.stringify(state.chatHistory || []),
     timer_seconds: 0,
   };
 

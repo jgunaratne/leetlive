@@ -24,6 +24,10 @@ import {
   resetTurnBuffers,
 } from "./live.js";
 import { startMic, stopMic, micActive } from "./audio.js";
+import { initChat, clearChat, setChatHistory } from "./chat.js";
+import { initTheme } from "./theme.js";
+
+initTheme();
 
 // ── Tab switching ───────────────────────────────────────────────────────────
 
@@ -59,6 +63,10 @@ if (persisted) {
     renderTranscriptLog();
   }
 
+  if (Array.isArray(persisted.chatHistory) && persisted.chatHistory.length) {
+    state.chatHistory = persisted.chatHistory;
+  }
+
   if (persisted.vizHtml) {
     state.currentVizHtml = persisted.vizHtml;
     renderViz(persisted.vizHtml);
@@ -80,6 +88,9 @@ initVisualize({ onGenerated: () => { sendLiveContext(); saveCurrentSession(); } 
 initLive();
 initDecision();
 initTimer();
+// Renders whatever chat history was just restored, so the sidebar is populated
+// before the user ever opens it.
+initChat({ onChanged: () => saveCurrentSession() });
 
 // ── History sidebar ─────────────────────────────────────────────────────────
 
@@ -93,6 +104,7 @@ function resetAppState() {
   resetDecision();
   clearTranscriptLog();
   resetTurnBuffers();
+  clearChat();
   resetTimer();
   updateLineNumbers();
 }
@@ -118,6 +130,10 @@ function restoreFromSession(session) {
     state.transcriptHistory = transcript;
     renderTranscriptLog();
   }
+
+  let chat = [];
+  try { chat = JSON.parse(session.chat_history || "[]"); } catch {}
+  setChatHistory(chat);
 
   if (session.viz_html) {
     state.currentVizHtml = session.viz_html;
