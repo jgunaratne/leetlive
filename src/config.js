@@ -18,13 +18,14 @@ export const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 export const GOOGLE_CLOUD_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || "";
 export const GOOGLE_CLOUD_LOCATION = process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
 
-export const FLASH_MODEL = "gemini-3.5-flash";
+export const FLASH_MODEL = "gemini-3.7-flash";
 export const LIVE_MODEL = "gemini-3.1-flash-live-preview";
 
-// Text chat with the professor in the right sidebar. Kept separate from
-// FLASH_MODEL because the chat is conversational and latency-sensitive, while
-// solve/visualize are one-shot structured generations.
-export const CHAT_MODEL = "gemini-3.6-flash";
+// Text chat with the professor in the right sidebar. Currently the same model
+// as FLASH_MODEL but kept as its own constant: the chat is conversational and
+// latency-sensitive, while solve/visualize are one-shot structured generations,
+// so the two are free to diverge again.
+export const CHAT_MODEL = "gemini-3.7-flash";
 
 // Prebuilt voice for the Live interviewer. Charon is deep and measured —
 // reads as calmer and more patient than the brighter voices (e.g. Orus, Puck).
