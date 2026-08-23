@@ -14,6 +14,12 @@
  *  - Mic audio that arrives while the upstream session is still opening is
  *    buffered, not dropped — otherwise the first thing the candidate says gets
  *    swallowed and the model appears unresponsive.
+ *  - Browser sockets are pinged on an interval. Interviews contain long silences,
+ *    and a silent WebSocket is what intermediaries reap; the ping keeps it alive
+ *    and the missing pong is how we notice a socket that is already dead.
+ *  - Any upstream failure closes the browser socket. A half-dead proxy — browser
+ *    still connected, Gemini gone — is indistinguishable from a thoughtful pause,
+ *    so the session just stops mid-conversation with nothing to trigger a retry.
  */
 
 import { WebSocketServer, WebSocket } from "ws";
@@ -25,8 +31,10 @@ import {
   PROFESSOR_VOICE,
   LIVE_SILENCE_MS,
   LIVE_END_SENSITIVITY,
+  LIVE_PREFIX_PADDING_MS,
   LIVE_COMPRESSION_TRIGGER_TOKENS,
   LIVE_COMPRESSION_TARGET_TOKENS,
+  LIVE_PING_INTERVAL_MS,
 } from "./config.js";
 import { INTERVIEWER_SYSTEM_INSTRUCTION, PROFESSOR_SYSTEM_INSTRUCTION } from "./prompts.js";
 
@@ -36,7 +44,30 @@ const MAX_PENDING_AUDIO_CHUNKS = 32;
 
 export function attachLiveProxy(server) {
   const wss = new WebSocketServer({ server, path: "/ws/gemini-live" });
-  wss.on("connection", (ws, req) => handleBrowserConnection(ws, req));
+
+  wss.on("connection", (ws, req) => {
+    // Liveness flag for the ping sweep below. Browsers answer pings from the
+    // WebSocket layer itself, so no client code is involved.
+    ws.isAlive = true;
+    ws.on("pong", () => { ws.isAlive = true; });
+    handleBrowserConnection(ws, req);
+  });
+
+  const sweep = setInterval(() => {
+    for (const ws of wss.clients) {
+      if (ws.isAlive === false) {
+        // Missed a full interval — the socket is gone even if it still looks
+        // open here. Terminate so the close handler tears the session down.
+        console.log("[Gemini Live] Browser socket unresponsive, terminating");
+        ws.terminate();
+        continue;
+      }
+      ws.isAlive = false;
+      try { ws.ping(); } catch {}
+    }
+  }, LIVE_PING_INTERVAL_MS);
+
+  wss.on("close", () => clearInterval(sweep));
   return wss;
 }
 
@@ -82,7 +113,7 @@ function handleBrowserConnection(browserWs, req) {
         startOfSpeechSensitivity: "START_SENSITIVITY_HIGH",
         endOfSpeechSensitivity: LIVE_END_SENSITIVITY,
         silenceDurationMs: LIVE_SILENCE_MS,
-        prefixPaddingMs: 200,
+        prefixPaddingMs: LIVE_PREFIX_PADDING_MS,
       },
     },
     // Keep long interviews alive instead of dying when the window fills.
@@ -94,25 +125,42 @@ function handleBrowserConnection(browserWs, req) {
     outputAudioTranscription: {},
   };
 
+  // Whether the upstream session has produced anything at all. A resumed session
+  // that dies without a single message is how an expired or mismatched handle
+  // reports itself, and retrying with the same handle just loops that failure.
+  let sawUpstreamMessage = false;
+
+  // Close the browser socket so the client's reconnect logic runs. Anything that
+  // kills the upstream session has to end up here: a proxy that stays open with
+  // a dead Gemini behind it looks exactly like the model thinking, and the
+  // conversation simply stops with nothing to trigger a retry.
+  function teardown(resumed) {
+    if (closed) return;
+    closed = true;
+    if (resumed && !sawUpstreamMessage) {
+      send(browserWs, { type: "resumeRejected" });
+    }
+    send(browserWs, { type: "status", status: "idle" });
+    try { browserWs.close(); } catch {}
+  }
+
   function callbacks(resumed) {
     return {
       onopen: () => {
         console.log(`[Gemini Live] Session opened (resumed: ${resumed})`);
       },
-      onmessage: (msg) => relayGeminiMessage(browserWs, msg),
+      onmessage: (msg) => {
+        sawUpstreamMessage = true;
+        relayGeminiMessage(browserWs, msg);
+      },
       onerror: (e) => {
         console.error("[Gemini Live] Error:", e?.message);
         send(browserWs, { type: "error", error: e?.message || "Live session error" });
+        teardown(resumed);
       },
       onclose: (e) => {
         console.log(`[Gemini Live] Closed: code=${e?.code}`);
-        send(browserWs, { type: "status", status: "idle" });
-        // Let the browser drive the reconnect rather than leaving a half-dead
-        // proxy socket around holding a stale session reference.
-        if (!closed) {
-          closed = true;
-          try { browserWs.close(); } catch {}
-        }
+        teardown(resumed);
       },
     };
   }
@@ -161,11 +209,12 @@ function handleBrowserConnection(browserWs, req) {
     } catch (err) {
       console.error("[Gemini Live] Failed to connect:", err?.message);
       send(browserWs, { type: "error", error: err?.message || "Failed to connect" });
-      browserWs.close();
+      teardown(false);
     }
   })();
 
   function forwardToGemini(msg) {
+    if (!geminiSession || closed) return;
     try {
       if (msg.type === "audio") {
         geminiSession.sendRealtimeInput({
@@ -179,7 +228,10 @@ function handleBrowserConnection(browserWs, req) {
         });
       }
     } catch (err) {
+      // The upstream socket is gone. Tear down so the browser reconnects rather
+      // than streaming mic audio into a session that no longer exists.
       console.error("[Gemini Live] Send failed:", err?.message);
+      teardown(false);
     }
   }
 
@@ -212,6 +264,15 @@ function handleBrowserConnection(browserWs, req) {
 
   browserWs.on("close", () => {
     console.log("[Gemini Live] Browser disconnected");
+    closed = true;
+    pending = [];
+    if (geminiSession) {
+      try { geminiSession.close(); } catch {}
+    }
+  });
+
+  browserWs.on("error", (err) => {
+    console.error("[Gemini Live] Browser socket error:", err?.message);
     closed = true;
     pending = [];
     if (geminiSession) {

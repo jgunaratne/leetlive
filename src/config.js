@@ -44,8 +44,28 @@ export const LIVE_SILENCE_MS = Number(process.env.LIVE_SILENCE_MS || 700);
 export const LIVE_END_SENSITIVITY =
   process.env.LIVE_END_SENSITIVITY || "END_SENSITIVITY_HIGH";
 
+// How much speech has to be detected before Gemini commits to "the user is
+// talking". Anything shorter is discarded as noise and never reaches the model,
+// so a clipped one-word reply ("ok", "yep", "right") looks like the interviewer
+// ignoring you. Keep this well below the length of a single spoken syllable
+// (~150ms); false positives are harmless because end-of-speech closes them out
+// immediately, whereas a swallowed turn is a dead conversation.
+export const LIVE_PREFIX_PADDING_MS = Number(process.env.LIVE_PREFIX_PADDING_MS || 20);
+
 // Sliding-window compression keeps long sessions alive: without it the session
 // is terminated once the context window fills, which shows up as a mid-interview
 // disconnect. Compaction is not free, so trigger late and keep a large tail.
-export const LIVE_COMPRESSION_TRIGGER_TOKENS = "16000";
-export const LIVE_COMPRESSION_TARGET_TOKENS = "8000";
+//
+// Every compaction also drops the oldest turns — including the code we pushed
+// earlier — which is why the model starts answering about a stale coding pad.
+// Triggering later means fewer of those amnesia events; LIVE_CODE_REFRESH_TURNS
+// on the client repairs the ones that still happen.
+export const LIVE_COMPRESSION_TRIGGER_TOKENS = "32000";
+export const LIVE_COMPRESSION_TARGET_TOKENS = "16000";
+
+// How often the proxy pings idle browser sockets. Long stretches of an interview
+// are silence in both directions, and an idle WebSocket is exactly what proxies,
+// NAT tables and laptop sleep quietly reap. A ping keeps the path warm and, when
+// the pong never comes, tells us the socket is dead so the browser can rebuild
+// it instead of talking into a void.
+export const LIVE_PING_INTERVAL_MS = Number(process.env.LIVE_PING_INTERVAL_MS || 20000);

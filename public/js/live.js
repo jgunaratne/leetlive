@@ -38,6 +38,22 @@ let reconnectAttempts = 0;
 const RECONNECT_BASE_MS = 800;
 const RECONNECT_MAX_MS = 15000;
 
+// Set when we already know the drop is coming (a goAway) and there is no point
+// waiting out a backoff we only need for genuine outages.
+let nextReconnectDelayMs = null;
+
+// Whether the current socket ever reached a live Gemini session. A socket that
+// dies before that is usually a handle the server could not resume, so the
+// handle is dropped rather than retried into the same failure forever.
+let sawConnected = false;
+
+// Model turns since the coding pad was last pushed. Sliding-window compression
+// eventually evicts the oldest turns, taking the code with it — which is what it
+// looks like when the interviewer starts discussing a version of the code you
+// edited ten minutes ago. Re-send the pad every so often to repair that.
+const CODE_REFRESH_TURNS = 8;
+let turnsSinceCodeSent = 0;
+
 // Snapshot of what the model has already been told, so context updates only
 // carry what actually changed. Re-sending the full problem + solution +
 // transcript on every edit bloats the session context and makes replies
@@ -78,6 +94,7 @@ export function connectLive(isUserAction = false) {
     reconnectAttempts = 0;
   }
 
+  sawConnected = false;
   statusText.textContent = isUserAction ? "Connecting..." : "Reconnecting...";
   btnConnectLive.disabled = true;
 
@@ -148,6 +165,7 @@ function cleanupLiveSession() {
   modelSpeaking = false;
   contextUpdatePending = false;
   sentContext = emptySentContext();
+  turnsSinceCodeSent = 0;
   document.body.classList.remove("live-connected", "interviewer-speaking");
   liveStatus.classList.add("hidden");
   btnConnectLive.classList.remove("hidden");
@@ -159,17 +177,27 @@ function cleanupLiveSession() {
 
   clearTimeout(autoReconnectTimer);
   clearTimeout(liveContextTimer);
+  liveContextTimer = null;
 
   if (isManualDisconnect) {
     statusText.textContent = "Click to connect";
     reconnectAttempts = 0;
   } else {
+    // A socket that never reached a live session almost always means the server
+    // could not resume our handle. Retrying with it just reproduces the failure,
+    // so start clean — the transcript replay puts the conversation back.
+    if (!sawConnected && resumptionHandle) {
+      console.warn("[Live] Dropped before connecting — discarding resume handle");
+      resumptionHandle = null;
+    }
+
     // Back off so a server-side outage isn't hammered once a second, but stay
     // fast for the common case of a single dropped connection.
-    const delay = Math.min(
+    const delay = nextReconnectDelayMs ?? Math.min(
       RECONNECT_BASE_MS * 2 ** reconnectAttempts,
       RECONNECT_MAX_MS
     );
+    nextReconnectDelayMs = null;
     reconnectAttempts++;
     statusText.textContent = "Connection lost. Reconnecting automatically...";
     autoReconnectTimer = setTimeout(() => {
@@ -196,6 +224,8 @@ function handleLiveMessage(msg) {
     case "status":
       if (msg.status === "connected") {
         reconnectAttempts = 0;
+        sawConnected = true;
+        turnsSinceCodeSent = 0;
         document.body.classList.add("live-connected");
         liveStatus.classList.remove("hidden");
         btnConnectLive.classList.add("hidden");
@@ -238,11 +268,21 @@ function handleLiveMessage(msg) {
       resumptionHandle = msg.handle;
       break;
 
+    case "resumeRejected":
+      // The server could not pick the old session back up. Forget the handle so
+      // the reconnect that follows starts a fresh session and replays history.
+      console.warn("[Live] Resume rejected — next attempt starts fresh");
+      resumptionHandle = null;
+      break;
+
     case "goAway":
       // Gemini is about to drop us. Reconnect now, from the latest checkpoint,
       // instead of waiting for the socket to die mid-sentence.
       console.log("[Live] GoAway — reconnecting early:", msg.timeLeft);
       reconnectAttempts = 0;
+      // This drop is expected, not a fault — waiting out a backoff here is pure
+      // dead air in the middle of a conversation.
+      nextReconnectDelayMs = 0;
       disconnectLive(false);
       break;
 
@@ -261,7 +301,13 @@ function handleLiveMessage(msg) {
       }
       // Next time the interviewer speaks, reset the caption text
       shouldResetInterviewer = true;
+      turnsSinceCodeSent++;
       flushPendingContext();
+      if (turnsSinceCodeSent >= CODE_REFRESH_TURNS && codePad.value.trim()) {
+        // Between turns is the only safe moment to re-push the pad, and the gap
+        // right after an answer is where it costs the least.
+        sendLiveContext({ turnComplete: false });
+      }
       break;
 
     case "interrupted":
@@ -281,6 +327,11 @@ function handleLiveMessage(msg) {
 
     case "inputTranscription":
       if (msg.text?.trim()) {
+        // The candidate is talking, so a reply is coming. Anything still sitting
+        // in the edit debounce has to land now — otherwise the model answers
+        // about the code as it was a couple of seconds ago, which is exactly the
+        // "take another look at my code" moment.
+        flushDebouncedContext();
         if (shouldResetUser) {
           userText = "";
           shouldResetUser = false;
@@ -327,6 +378,7 @@ let liveContextTimer = null;
 export function sendLiveContextDebounced() {
   clearTimeout(liveContextTimer);
   liveContextTimer = setTimeout(() => {
+    liveContextTimer = null;
     sendLiveContext({ turnComplete: false });
   }, 2000);
 
@@ -334,6 +386,18 @@ export function sendLiveContextDebounced() {
   if (liveWs && liveWs.readyState === WebSocket.OPEN && liveSyncIndicator) {
     liveSyncIndicator.classList.remove("hidden");
   }
+}
+
+/**
+ * Cut the edit debounce short and push now. Called the moment the candidate
+ * starts speaking: the debounce exists to avoid a context update per keystroke,
+ * not to make the model answer questions about code that has already changed.
+ */
+function flushDebouncedContext() {
+  if (!liveContextTimer) return;
+  clearTimeout(liveContextTimer);
+  liveContextTimer = null;
+  sendLiveContext({ turnComplete: false });
 }
 
 function flushPendingContext() {
@@ -368,8 +432,13 @@ export function sendLiveContext(options = {}) {
   const isProfessor = currentMode === "professor";
   const who = isProfessor ? "Student" : "Candidate";
 
-  if (code.trim() && code !== sentContext.code) {
+  // Re-send the pad when it changed, and also when it has simply been too many
+  // turns — context compaction may have evicted the copy the model was holding.
+  const codeIsStale = turnsSinceCodeSent >= CODE_REFRESH_TURNS;
+  let codeSent = false;
+  if (code.trim() && (code !== sentContext.code || codeIsStale)) {
     parts.push(codeBlock(code, who));
+    codeSent = true;
   }
 
   if (solveKey && solveKey !== sentContext.solve) {
@@ -414,6 +483,7 @@ export function sendLiveContext(options = {}) {
   }));
 
   sentContext = { code, solve: solveKey, viz: vizKey, history: true };
+  if (codeSent) turnsSinceCodeSent = 0;
   if (liveSyncIndicator) liveSyncIndicator.classList.add("hidden");
 }
 
