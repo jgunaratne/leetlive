@@ -11,6 +11,7 @@ export const state = {
   currentProblemName: null,
   currentSolveData: null,
   currentVizHtml: null,
+  currentDecision: null, // last hiring decision returned by /api/decision
   transcriptHistory: [], // { role: "user" | "interviewer", text: string, time: string }
   chatHistory: [], // { role: "user" | "assistant", text: string, time: string }
 };
