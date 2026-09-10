@@ -24,6 +24,13 @@ import { initCaption, updateCaption, appendToTranscriptLog } from "./transcript.
 import { playAudio, startMic, stopMic, resetPlayback, flushPlayback } from "./audio.js";
 import { codeBlock, solutionBlocks, vizBlock, historyBlock } from "./workspace.js";
 import { triggerSolve } from "./solution.js";
+import {
+  startAttempt,
+  noteHint,
+  noteSpokenTurn,
+  nextHintLevel,
+  hintsRemaining,
+} from "./metrics.js";
 
 let liveWs = null;
 let isManualDisconnect = false;
@@ -108,6 +115,13 @@ let shouldResetUser = false;
 // Panel title / icon elements
 const livePanelTitle = document.getElementById("live-panel-title");
 const livePanelIcon = document.getElementById("live-panel-icon");
+const btnHint = document.getElementById("btn-hint");
+const btnHintLabel = document.getElementById("btn-hint-label");
+
+// Which mode this attempt gets recorded under: "" until a live session has
+// actually been started, then "interview", and "professor" once professor mode
+// has been used at all. Professor mode latches — see getSessionMode().
+let sessionModeRecord = "";
 
 // ── Connection lifecycle ────────────────────────────────────────────────────
 
@@ -204,6 +218,7 @@ function cleanupLiveSession() {
   btnConnectLive.disabled = false;
   btnDisconnectLive.classList.add("hidden");
   btnMic.classList.add("hidden");
+  if (btnHint) btnHint.classList.add("hidden");
   if (liveSyncIndicator) liveSyncIndicator.classList.add("hidden");
   resetPlayback();
 
@@ -270,6 +285,9 @@ function noteSpeechActivity() {
  */
 function handleEndOfSpeech() {
   speechGapTimer = null;
+  // A finished utterance is the unit "did they explain themselves" is measured
+  // in, and this is the moment it finishes.
+  noteSpokenTurn("user", userText);
   flushDebouncedContext();
 
   // With no open turn, VAD closes the audio turn on its own and a close from us
@@ -293,6 +311,65 @@ function sendCloseTurn() {
   if (!liveWs || liveWs.readyState !== WebSocket.OPEN) return;
   turnLeftOpen = false;
   liveWs.send(JSON.stringify({ type: "closeTurn" }));
+}
+
+// ── Hints ───────────────────────────────────────────────────────────────────
+
+/**
+ * The mode this attempt is recorded under. Switching between interview and
+ * professor mid-attempt does not split the session in two — it is one problem,
+ * one session row — but professor mode latches, because an attempt where the
+ * candidate was taught cannot be read as an unaided interview.
+ *
+ * Empty until a live session has actually been started, so a session where the
+ * user only ever typed in the pad is not counted as an interview they aced.
+ */
+export function getSessionMode() {
+  return sessionModeRecord;
+}
+
+export function resetSessionMode() {
+  sessionModeRecord = "";
+}
+
+/**
+ * Pull the next rung of the hint ladder. The workspace is pushed first without
+ * completing the turn, so the hint is given against the code as it stands now;
+ * the request itself completes the turn and is what asks for the reply.
+ */
+function requestHint() {
+  if (!liveWs || liveWs.readyState !== WebSocket.OPEN) return;
+  const level = nextHintLevel();
+  if (level === null) return;
+
+  sendLiveContext({ turnComplete: false });
+  liveWs.send(JSON.stringify({
+    type: "context",
+    text: `[HINT REQUEST: level ${level}]`,
+    turnComplete: true,
+  }));
+  turnLeftOpen = false;
+  clearTurnTimers();
+
+  noteHint(level);
+  updateHintButton();
+}
+
+function updateHintButton() {
+  if (!btnHint || !btnHintLabel) return;
+
+  // Interview-only: the professor teaches on request already, so a rationed
+  // hint ladder there would be measuring the wrong thing.
+  const available = currentMode === "interview" && !!liveWs;
+  btnHint.classList.toggle("hidden", !available);
+  if (!available) return;
+
+  const left = hintsRemaining();
+  btnHint.disabled = left === 0;
+  btnHintLabel.textContent = left === 0 ? "No hints left" : `Hint · ${left} left`;
+  btnHint.title = left === 0
+    ? "You've used all four hints"
+    : `Ask for the next hint — ${left} of 4 remaining`;
 }
 
 // Called when the transcript is cleared so stale turn text doesn't get
@@ -319,6 +396,7 @@ function handleLiveMessage(msg) {
         btnDisconnectLive.classList.remove("hidden");
         btnMic.classList.remove("hidden");
         btnMic.disabled = false;
+        updateHintButton();
         statusText.textContent = "Connected — Interview in progress";
         // Clear welcome text and init caption
         transcript.innerHTML = "";
@@ -590,6 +668,7 @@ function updatePanelForMode() {
   if (livePanelTitle) {
     livePanelTitle.textContent = currentMode === "professor" ? "Professor" : "Interviewer";
   }
+  updateHintButton();
 }
 
 async function startLiveSession(mode) {
@@ -598,6 +677,16 @@ async function startLiveSession(mode) {
     disconnectLive();
   }
   currentMode = mode;
+
+  if (mode === "professor") {
+    // Latches for the rest of the attempt — see getSessionMode().
+    sessionModeRecord = "professor";
+  } else {
+    if (sessionModeRecord !== "professor") sessionModeRecord = "interview";
+    // A fresh interview run: time-to-first-code and time-to-approach are only
+    // meaningful measured from the moment the interview actually started.
+    startAttempt();
+  }
   updatePanelForMode();
   document.body.classList.add("live-open");
 
@@ -624,6 +713,10 @@ export function initLive() {
     disconnectLive();
     document.body.classList.remove("live-open");
   });
+
+  if (btnHint) {
+    btnHint.addEventListener("click", requestHint);
+  }
 
   btnConnectLive.addEventListener("click", () => connectLive(true));
   btnDisconnectLive.addEventListener("click", () => {
