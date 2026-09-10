@@ -14,6 +14,9 @@
  *  - Mic audio that arrives while the upstream session is still opening is
  *    buffered, not dropped — otherwise the first thing the candidate says gets
  *    swallowed and the model appears unresponsive.
+ *  - Client content sent with `turnComplete: false` leaves the user turn open,
+ *    and VAD does not reliably close a turn that client content opened. The
+ *    browser can send `closeTurn` to end it explicitly.
  *  - Browser sockets are pinged on an interval. Interviews contain long silences,
  *    and a silent WebSocket is what intermediaries reap; the ping keeps it alive
  *    and the missing pong is how we notice a socket that is already dead.
@@ -226,6 +229,13 @@ function handleBrowserConnection(browserWs, req) {
           turns: [{ role: "user", parts: [{ text: msg.text }] }],
           turnComplete: msg.turnComplete === true,
         });
+      } else if (msg.type === "closeTurn") {
+        // Close a user turn that client content left open, without adding
+        // anything to it. Omitting `turns` is what makes this a pure
+        // end-of-turn marker: the SDK serializes it to a bare
+        // `{clientContent: {turnComplete: true}}`, which tells the server to
+        // start generating from the prompt it has already accumulated.
+        geminiSession.sendClientContent({ turnComplete: true });
       }
     } catch (err) {
       // The upstream socket is gone. Tear down so the browser reconnects rather
@@ -251,13 +261,14 @@ function handleBrowserConnection(browserWs, req) {
       return;
     }
 
-    if (msg.type !== "audio" && msg.type !== "context") return;
+    if (msg.type !== "audio" && msg.type !== "context" && msg.type !== "closeTurn") return;
 
     if (geminiSession) {
       forwardToGemini(msg);
-    } else if (msg.type === "context" || pending.length < MAX_PENDING_AUDIO_CHUNKS) {
-      // Context is small and load-bearing, so it is never dropped; audio is
-      // capped so a stalled connect can't grow the queue without bound.
+    } else if (msg.type !== "audio" || pending.length < MAX_PENDING_AUDIO_CHUNKS) {
+      // Only audio is subject to the cap. Control messages are small and
+      // load-bearing — dropping a closeTurn because the audio buffer happened
+      // to be full is how a turn stays open forever.
       pending.push(msg);
     }
   });
