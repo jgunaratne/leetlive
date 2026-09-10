@@ -65,6 +65,36 @@ let sentContext = emptySentContext();
 let modelSpeaking = false;
 let contextUpdatePending = false;
 
+// ── Turn state ──────────────────────────────────────────────────────────────
+//
+// A context push with `turnComplete: false` deliberately does not ask for a
+// reply — a code edit should not make the interviewer start talking. The
+// side effect is that it leaves the user turn *open*, and mic audio sent with
+// sendRealtimeInput joins that same open turn. End-of-speech from VAD does not
+// reliably close a turn that client content opened, so the model sits waiting
+// for more input and the candidate has to repeat themselves to get an answer.
+//
+// The repair: notice end-of-speech ourselves and, if no reply materialises,
+// close the turn explicitly. Both timings are heuristics — VAD's own decision
+// is not visible to us, and model latency varies — so they live here as
+// constants to be tuned against real sessions.
+
+// No new input transcription for this long means the candidate stopped talking.
+// Long enough to sit through a mid-sentence pause, short enough that the
+// watchdog below still fires inside a natural conversational gap.
+const SPEECH_GAP_MS = 900;
+
+// How long after end-of-speech to wait for the model before assuming the turn
+// is stuck open. Comfortably longer than a normal time-to-first-audio, so a
+// merely slow reply is never cut off by a redundant turn close.
+const TURN_WATCHDOG_MS = 3500;
+
+// Set when a context push left the user turn open. Only then is a stuck turn
+// possible, and only then does the watchdog have anything to fix.
+let turnLeftOpen = false;
+let speechGapTimer = null;
+let responseWatchdog = null;
+
 function emptySentContext() {
   return { code: null, solve: null, viz: null, history: false };
 }
@@ -162,6 +192,8 @@ function cleanupLiveSession() {
   liveWs = null;
 
   stopMic();
+  clearTurnTimers();
+  turnLeftOpen = false;
   modelSpeaking = false;
   contextUpdatePending = false;
   sentContext = emptySentContext();
@@ -206,6 +238,61 @@ function cleanupLiveSession() {
       }
     }, delay);
   }
+}
+
+// ── Turn state ──────────────────────────────────────────────────────────────
+
+function clearTurnTimers() {
+  clearTimeout(speechGapTimer);
+  speechGapTimer = null;
+  clearTimeout(responseWatchdog);
+  responseWatchdog = null;
+}
+
+/**
+ * Called on every input transcription. Each one pushes the end-of-speech
+ * decision further out, so the gap is measured from the last thing the
+ * candidate said rather than the first.
+ */
+function noteSpeechActivity() {
+  // Still talking — whatever we were waiting on is not stuck, it is ongoing.
+  clearTimeout(responseWatchdog);
+  responseWatchdog = null;
+  clearTimeout(speechGapTimer);
+  speechGapTimer = setTimeout(handleEndOfSpeech, SPEECH_GAP_MS);
+}
+
+/**
+ * The candidate has stopped talking and a reply is due. This is the one moment
+ * where pushing context is free: the utterance is finished and the answer has
+ * not started, so an update here neither splits the audio turn nor interrupts
+ * the interviewer.
+ */
+function handleEndOfSpeech() {
+  speechGapTimer = null;
+  flushDebouncedContext();
+
+  // With no open turn, VAD closes the audio turn on its own and a close from us
+  // would only risk prompting an unasked-for reply.
+  if (!turnLeftOpen) return;
+
+  clearTimeout(responseWatchdog);
+  responseWatchdog = setTimeout(() => {
+    responseWatchdog = null;
+    if (!turnLeftOpen) return;
+    console.warn("[Live] No reply after end of speech — closing the open turn");
+    sendCloseTurn();
+  }, TURN_WATCHDOG_MS);
+}
+
+/**
+ * Close a dangling user turn without adding anything to it, so the model
+ * answers what has already been said instead of waiting for more.
+ */
+function sendCloseTurn() {
+  if (!liveWs || liveWs.readyState !== WebSocket.OPEN) return;
+  turnLeftOpen = false;
+  liveWs.send(JSON.stringify({ type: "closeTurn" }));
 }
 
 // Called when the transcript is cleared so stale turn text doesn't get
@@ -287,6 +374,10 @@ function handleLiveMessage(msg) {
       break;
 
     case "audio":
+      // The model is answering, so the user turn has been consumed — whatever
+      // we were about to fix is no longer broken.
+      clearTurnTimers();
+      turnLeftOpen = false;
       playAudio(msg.data, msg.mimeType);
       modelSpeaking = true;
       document.body.classList.add("interviewer-speaking");
@@ -327,11 +418,12 @@ function handleLiveMessage(msg) {
 
     case "inputTranscription":
       if (msg.text?.trim()) {
-        // The candidate is talking, so a reply is coming. Anything still sitting
-        // in the edit debounce has to land now — otherwise the model answers
-        // about the code as it was a couple of seconds ago, which is exactly the
-        // "take another look at my code" moment.
-        flushDebouncedContext();
+        // Transcription is the only end-of-speech signal visible from here —
+        // VAD makes its decision server-side and never tells us. Context is
+        // deliberately NOT flushed here: pushing client content mid-sentence
+        // splits the audio turn the candidate is still speaking into. It gets
+        // flushed at end-of-speech instead.
+        noteSpeechActivity();
         if (shouldResetUser) {
           userText = "";
           shouldResetUser = false;
@@ -390,7 +482,7 @@ export function sendLiveContextDebounced() {
 
 /**
  * Cut the edit debounce short and push now. Called the moment the candidate
- * starts speaking: the debounce exists to avoid a context update per keystroke,
+ * stops speaking: the debounce exists to avoid a context update per keystroke,
  * not to make the model answer questions about code that has already changed.
  */
 function flushDebouncedContext() {
@@ -481,6 +573,11 @@ export function sendLiveContext(options = {}) {
     text: parts.join("\n\n"),
     turnComplete,
   }));
+
+  // A push that does not complete the turn leaves it open for mic audio to join
+  // — the condition the end-of-speech watchdog exists to unstick.
+  turnLeftOpen = !turnComplete;
+  if (turnComplete) clearTurnTimers();
 
   sentContext = { code, solve: solveKey, viz: vizKey, history: true };
   if (codeSent) turnsSinceCodeSent = 0;
