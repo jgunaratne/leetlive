@@ -8,6 +8,8 @@
 import { codePad } from "./dom.js";
 import { state, saveState, loadPersistedState } from "./state.js";
 import { escapeHtml } from "./util.js";
+import { serializeMetrics } from "./metrics.js";
+import { getSessionMode } from "./live.js";
 
 /* ── DOM references ─────────────────────────────────────────────────── */
 const sidebarOverlay = document.querySelector("#sidebar-overlay");
@@ -120,6 +122,11 @@ async function saveCurrentSession() {
     viz_html: state.currentVizHtml || "",
     transcript_history: JSON.stringify(state.transcriptHistory || []),
     chat_history: JSON.stringify(state.chatHistory || []),
+    // Without these the trends endpoint has nothing to aggregate — every row
+    // would be mode '' and metrics '{}', and the query would return empty.
+    mode: getSessionMode(),
+    metrics: serializeMetrics(),
+    decision: JSON.stringify(state.currentDecision || {}),
     timer_seconds: 0,
   };
 

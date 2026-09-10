@@ -807,7 +807,10 @@ body.live-open #col-live {
 /* Dimension Cards */
 .decision-dimensions {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Four dimensions now. Auto-fit rather than a fixed count so the cards go
+     two-up in the narrow decision panel instead of being squeezed to a column
+     of single words. */
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: var(--space-sm);
 }
 
@@ -1249,6 +1252,37 @@ body.live-open #col-live {
 .btn-disconnect:hover {
   color: var(--color-error);
   border-color: var(--color-error);
+}
+
+/* Hint button — deliberately understated. Pulling a hint is a decision the
+   candidate makes and pays for in the grade, so the control sits quietly at the
+   edge of the controls rather than presenting itself as the obvious next move.
+   It never uses an accent colour and never draws the eye. */
+.btn-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 0.7rem;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-hint:hover:not(:disabled) {
+  color: var(--text-secondary);
+  border-color: var(--border-subtle);
+}
+
+.btn-hint:disabled {
+  opacity: 0.3;
+  cursor: default;
 }
 
 /* Mic button */

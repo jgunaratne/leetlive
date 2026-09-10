@@ -22,7 +22,9 @@ import {
   sendLiveContextDebounced,
   sendAudioChunk,
   resetTurnBuffers,
+  resetSessionMode,
 } from "./live.js";
+import { noteFirstCode, resetMetrics } from "./metrics.js";
 import { startMic, stopMic, micActive } from "./audio.js";
 import { initChat, clearChat, setChatHistory } from "./chat.js";
 import { initTheme } from "./theme.js";
@@ -86,7 +88,7 @@ initSolve({ onSolved: () => { sendLiveContext(); saveCurrentSession(); } });
 initClear({ onCleared: () => { sendLiveContext(); saveCurrentSession(); } });
 initVisualize({ onGenerated: () => { sendLiveContext(); saveCurrentSession(); } });
 initLive();
-initDecision();
+initDecision({ onDecided: () => saveCurrentSession() });
 initTimer();
 // Renders whatever chat history was just restored, so the sidebar is populated
 // before the user ever opens it.
@@ -106,6 +108,10 @@ function resetAppState() {
   resetTurnBuffers();
   clearChat();
   resetTimer();
+  // A new problem is a new attempt: timings and hints from the last one would
+  // otherwise be carried into its grade.
+  resetMetrics();
+  resetSessionMode();
   updateLineNumbers();
 }
 
@@ -203,6 +209,9 @@ btnMic.addEventListener("click", () => {
 // Auto-save to backend periodically when the user types
 let autoSaveTimer = null;
 codePad.addEventListener("input", () => {
+  // First keystroke in the pad marks the end of "thinking about it" and the
+  // start of "writing it" — the metric that separates framing from diving in.
+  noteFirstCode();
   clearTimeout(autoSaveTimer);
   autoSaveTimer = setTimeout(() => saveCurrentSession(), 5000);
 });

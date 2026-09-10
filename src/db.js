@@ -23,17 +23,34 @@ db.exec(`
     viz_html TEXT DEFAULT '',
     transcript_history TEXT DEFAULT '[]',
     chat_history TEXT DEFAULT '[]',
+    mode TEXT DEFAULT '',
+    metrics TEXT DEFAULT '{}',
+    decision TEXT DEFAULT '{}',
     timer_seconds INTEGER DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
 `);
 
-// Databases created before the professor chat existed are missing chat_history;
-// CREATE TABLE IF NOT EXISTS won't add it, so patch the column in by hand.
+// CREATE TABLE IF NOT EXISTS does nothing to a table that already exists, so
+// every column added after a database was first created has to be patched in by
+// hand. Existing databases are in the field with real interview history in them
+// — dropping and recreating would take that with it.
+const ADDED_COLUMNS = [
+  // Added with the professor chat.
+  ["chat_history", `TEXT DEFAULT '[]'`],
+  // Added with cross-session trends: which mode the attempt ran in, the
+  // independence metrics for it, and the hiring decision it produced.
+  ["mode", `TEXT DEFAULT ''`],
+  ["metrics", `TEXT DEFAULT '{}'`],
+  ["decision", `TEXT DEFAULT '{}'`],
+];
+
 const columns = db.prepare(`PRAGMA table_info(sessions)`).all().map((c) => c.name);
-if (!columns.includes("chat_history")) {
-  db.exec(`ALTER TABLE sessions ADD COLUMN chat_history TEXT DEFAULT '[]'`);
+for (const [name, type] of ADDED_COLUMNS) {
+  if (!columns.includes(name)) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN ${name} ${type}`);
+  }
 }
 
 const stmtGetAll = db.prepare(`
@@ -48,9 +65,20 @@ const stmtGetById = db.prepare(`
 
 const stmtUpsert = db.prepare(`
   INSERT OR REPLACE INTO sessions
-    (id, problem_name, difficulty, category, code, solve_data, viz_html, transcript_history, chat_history, timer_seconds, created_at, updated_at)
+    (id, problem_name, difficulty, category, code, solve_data, viz_html, transcript_history, chat_history, mode, metrics, decision, timer_seconds, created_at, updated_at)
   VALUES
-    (@id, @problem_name, @difficulty, @category, @code, @solve_data, @viz_html, @transcript_history, @chat_history, @timer_seconds, @created_at, @updated_at)
+    (@id, @problem_name, @difficulty, @category, @code, @solve_data, @viz_html, @transcript_history, @chat_history, @mode, @metrics, @decision, @timer_seconds, @created_at, @updated_at)
+`);
+
+// Interview attempts that actually recorded metrics, oldest first — the order
+// a trend is read in. Professor sessions are excluded on purpose: that mode is
+// teaching, so counting its hints against independence would punish the user
+// for using the feature as intended.
+const stmtGetTrends = db.prepare(`
+  SELECT id, problem_name, difficulty, category, mode, metrics, decision, created_at, updated_at
+  FROM sessions
+  WHERE mode = 'interview' AND metrics IS NOT NULL AND metrics != '' AND metrics != '{}'
+  ORDER BY created_at ASC
 `);
 
 const stmtDelete = db.prepare(`DELETE FROM sessions WHERE id = ?`);
@@ -77,12 +105,53 @@ export function upsertSession(session) {
     viz_html: session.viz_html ?? "",
     transcript_history: session.transcript_history ?? "[]",
     chat_history: session.chat_history ?? "[]",
+    mode: session.mode ?? "",
+    metrics: session.metrics ?? "{}",
+    decision: session.decision ?? "{}",
     timer_seconds: session.timer_seconds ?? 0,
     created_at: session.created_at || now,
     updated_at: now,
   };
   stmtUpsert.run(row);
   return row;
+}
+
+/**
+ * Interview attempts with metrics, oldest first. Each row's metrics and
+ * decision are parsed here so callers never have to think about the fact that
+ * they are stored as JSON text; a row whose JSON is unreadable is dropped
+ * rather than allowed to poison an aggregate.
+ */
+export function getTrends() {
+  return stmtGetTrends
+    .all()
+    .map((row) => {
+      let metrics;
+      try {
+        metrics = JSON.parse(row.metrics || "{}");
+      } catch {
+        return null;
+      }
+      if (!metrics || typeof metrics !== "object") return null;
+
+      let decision = null;
+      try {
+        const parsed = JSON.parse(row.decision || "{}");
+        if (parsed && parsed.decision) decision = parsed;
+      } catch {}
+
+      return {
+        id: row.id,
+        problemName: row.problem_name || "",
+        difficulty: row.difficulty || "",
+        category: row.category || "Uncategorized",
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        metrics,
+        decision: decision ? decision.decision : null,
+      };
+    })
+    .filter(Boolean);
 }
 
 export function deleteSession(id) {

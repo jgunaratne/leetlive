@@ -9,6 +9,7 @@
 import { codePad } from "./dom.js";
 import { state } from "./state.js";
 import { escapeHtml } from "./util.js";
+import { formatMetricsBlock, getMetricsSummary } from "./metrics.js";
 
 const btnDecision = document.getElementById("btn-decision");
 const decisionPlaceholder = document.getElementById("decision-placeholder");
@@ -45,6 +46,9 @@ function renderList(items, className) {
 }
 
 function renderDimensionCard(title, icon, text) {
+  // A response from before this dimension existed simply omits the card rather
+  // than rendering the string "undefined".
+  if (!text) return "";
   return `
     <div class="decision-dimension">
       <div class="dimension-header">
@@ -77,6 +81,7 @@ function renderDecision(data) {
       ${renderDimensionCard("Code Quality", "⌨", data.codeQuality)}
       ${renderDimensionCard("Communication", "💬", data.communication)}
       ${renderDimensionCard("Problem Solving", "🧩", data.problemSolving)}
+      ${renderDimensionCard("Independence", "🔑", data.independence)}
     </div>
 
     <!-- Strengths & Weaknesses -->
@@ -110,7 +115,10 @@ function renderDecision(data) {
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
+let _onDecided = null;
+
 export function resetDecision() {
+  state.currentDecision = null;
   decisionResult.classList.add("hidden");
   decisionLoading.classList.add("hidden");
   decisionPlaceholder.classList.remove("hidden");
@@ -119,7 +127,9 @@ export function resetDecision() {
   `;
 }
 
-export function initDecision() {
+export function initDecision(opts = {}) {
+  _onDecided = opts.onDecided || null;
+
   btnDecision.addEventListener("click", async () => {
     const code = codePad.value.trim();
     const transcript = getTranscriptText();
@@ -140,7 +150,12 @@ export function initDecision() {
       const res = await fetch("/api/decision", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, transcript }),
+        body: JSON.stringify({
+          code,
+          transcript,
+          metrics: formatMetricsBlock(),
+          metricsSummary: getMetricsSummary(),
+        }),
       });
 
       if (!res.ok) {
@@ -152,6 +167,11 @@ export function initDecision() {
       decisionLoading.classList.add("hidden");
       decisionResult.classList.remove("hidden");
       renderDecision(data);
+
+      // Persisted with the session so trends can report on verdicts, not just
+      // on the metrics that produced them.
+      state.currentDecision = data;
+      if (_onDecided) _onDecided(data);
     } catch (err) {
       decisionLoading.classList.add("hidden");
       decisionPlaceholder.classList.remove("hidden");
