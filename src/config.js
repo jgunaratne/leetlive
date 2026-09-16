@@ -19,7 +19,10 @@ export const GOOGLE_CLOUD_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || "";
 export const GOOGLE_CLOUD_LOCATION = process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
 
 export const FLASH_MODEL = "gemini-3.8-flash";
-export const LIVE_MODEL = "gemini-3.1-flash-live-preview";
+// gemini-3.8-live is the GA Live model (no preview suffix). Its sibling,
+// gemini-3.8-live-extended-thinking, adds thinkingConfig support at the cost
+// of latency; not worth it for a conversational interviewer.
+export const LIVE_MODEL = "gemini-3.8-live";
 
 // Text chat with the professor in the right sidebar. Currently the same model
 // as FLASH_MODEL but kept as its own constant: the chat is conversational and
