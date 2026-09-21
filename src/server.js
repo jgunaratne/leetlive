@@ -13,7 +13,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-import { PORT, CERT_DIR, FLASH_MODEL, LIVE_MODEL, CHAT_MODEL, GEMINI_API_KEY, GOOGLE_CLOUD_PROJECT } from "./config.js";
+import { PORT, CERT_DIR, FLASH_MODEL, LIVE_MODEL, CHAT_MODEL, LM_STUDIO_URL, GEMINI_API_KEY, GOOGLE_CLOUD_PROJECT } from "./config.js";
 import { solveRouter } from "./routes/solve.js";
 import { visualizeRouter } from "./routes/visualize.js";
 import { decisionRouter } from "./routes/decision.js";
@@ -52,6 +52,7 @@ server.listen(PORT, () => {
   console.log(`   Gemini Flash model: ${FLASH_MODEL}`);
   console.log(`   Gemini Live model:  ${LIVE_MODEL}`);
   console.log(`   Gemini Chat model:  ${CHAT_MODEL}`);
+  console.log(`   LM Studio (local):  ${LM_STUDIO_URL}`);
   console.log(`   Auth: ${GEMINI_API_KEY ? "API Key" : GOOGLE_CLOUD_PROJECT ? "Vertex AI" : "⚠️  NOT CONFIGURED"}`);
   console.log();
 });

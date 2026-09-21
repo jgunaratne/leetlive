@@ -25,6 +25,7 @@ const btnChatToggle = document.querySelector("#btn-chat-toggle");
 const btnChatClose = document.querySelector("#btn-chat-close");
 const btnChatClear = document.querySelector("#btn-chat-clear");
 const btnChatSend = document.querySelector("#btn-chat-send");
+const chatModelSelect = document.querySelector("#chat-model");
 
 /* ── State ──────────────────────────────────────────────────────────── */
 let streaming = false;
@@ -34,6 +35,7 @@ let onChanged = null;
 const MIN_WIDTH = 300;
 const MAX_WIDTH = 720;
 const WIDTH_KEY = "leetlive_chat_width";
+const MODEL_KEY = "leetlive_chat_model";
 
 const SUGGESTIONS = [
   { label: "Explain this problem", prompt: "Explain this problem to me in plain language, then tell me what pattern it fits." },
@@ -134,6 +136,57 @@ function scrollToBottom(force = false) {
   }
 }
 
+/* ── Model picker ───────────────────────────────────────────────────── */
+
+const PROVIDER_LABELS = { gemini: "Gemini", local: "LM Studio (local)" };
+
+/**
+ * Rebuild the dropdown from /api/chat/models. Called every time the sidebar
+ * opens, not just once: LM Studio can be started (or quit) at any point, and
+ * its models should appear (or vanish) without a page reload. A remembered
+ * choice that has gone away falls back to the default rather than sending
+ * requests to a model that no longer exists.
+ */
+async function refreshModels() {
+  if (!chatModelSelect) return;
+  let data;
+  try {
+    const res = await fetch("/api/chat/models");
+    if (!res.ok) return;
+    data = await res.json();
+  } catch {
+    return;
+  }
+
+  const models = Array.isArray(data?.models) ? data.models : [];
+  if (!models.length) return;
+
+  let preferred = chatModelSelect.value;
+  try { preferred = localStorage.getItem(MODEL_KEY) || preferred; } catch {}
+
+  chatModelSelect.innerHTML = "";
+  for (const provider of Object.keys(PROVIDER_LABELS)) {
+    const group = models.filter((m) => m.provider === provider);
+    if (!group.length) continue;
+    const optgroup = document.createElement("optgroup");
+    optgroup.label = PROVIDER_LABELS[provider];
+    for (const m of group) {
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = m.label || m.id;
+      optgroup.appendChild(opt);
+    }
+    chatModelSelect.appendChild(optgroup);
+  }
+
+  const available = models.some((m) => m.id === preferred);
+  chatModelSelect.value = available ? preferred : (data.default || models[0].id);
+}
+
+function selectedModel() {
+  return chatModelSelect?.value || undefined;
+}
+
 /* ── Sending ────────────────────────────────────────────────────────── */
 
 function setStreaming(on) {
@@ -181,6 +234,7 @@ async function sendMessage(text) {
         // Exclude the empty placeholder we just pushed.
         messages: state.chatHistory.slice(0, -1).map(({ role, text }) => ({ role, text })),
         context: buildWorkspaceContext(),
+        model: selectedModel(),
       }),
     });
 
@@ -267,6 +321,7 @@ function autoGrow() {
 
 export function openChat() {
   document.body.classList.add("chat-open");
+  refreshModels();
   setTimeout(() => chatInput?.focus(), 200);
 }
 
@@ -336,6 +391,11 @@ export function initChat(opts = {}) {
   renderChat();
   initResizer();
   autoGrow();
+  refreshModels();
+
+  chatModelSelect?.addEventListener("change", () => {
+    try { localStorage.setItem(MODEL_KEY, chatModelSelect.value); } catch {}
+  });
 
   btnChatToggle?.addEventListener("click", toggleChat);
   btnChatClose?.addEventListener("click", closeChat);
