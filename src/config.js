@@ -29,6 +29,13 @@ export const LIVE_MODEL = "gemini-3.8-live";
 // latency-sensitive, while solve/visualize are one-shot structured generations,
 // so the two are free to diverge again.
 export const CHAT_MODEL = "gemini-3.8-flash";
+export const CHAT_MODEL_LABEL = "Gemini 3.8 Flash";
+
+// LM Studio's local server (OpenAI-compatible). Any model it has loaded can be
+// picked as the professor instead of Gemini — handy offline, or for trying a
+// local model such as Qwen against the same prompts. Probed lazily, so nothing
+// here breaks when LM Studio isn't running.
+export const LM_STUDIO_URL = (process.env.LM_STUDIO_URL || "http://localhost:1234").replace(/\/+$/, "");
 
 // Prebuilt voice for the Live interviewer. Charon is deep and measured —
 // reads as calmer and more patient than the brighter voices (e.g. Orus, Puck).
