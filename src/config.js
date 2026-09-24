@@ -46,6 +46,11 @@ export const LIVE_VOICE = "Charon";
 // under gemini-3.8-live; Puck does.
 export const PROFESSOR_VOICE = "Puck";
 
+// Voice character (above) only picks a timbre — the actual accent comes from
+// this locale on speechConfig. Without it the Live API defaults to American
+// pronunciation no matter what the system instruction asks for.
+export const PROFESSOR_VOICE_LANGUAGE = "en-GB";
+
 // ── Voice activity detection ────────────────────────────────────────────────
 // How long the candidate has to stay quiet before Gemini treats the turn as
 // finished and starts answering. This is the single biggest knob on perceived

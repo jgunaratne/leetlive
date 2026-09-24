@@ -32,6 +32,7 @@ import {
   LIVE_MODEL,
   LIVE_VOICE,
   PROFESSOR_VOICE,
+  PROFESSOR_VOICE_LANGUAGE,
   LIVE_SILENCE_MS,
   LIVE_END_SENSITIVITY,
   LIVE_PREFIX_PADDING_MS,
@@ -83,6 +84,7 @@ function handleBrowserConnection(browserWs, req) {
     ? PROFESSOR_SYSTEM_INSTRUCTION
     : INTERVIEWER_SYSTEM_INSTRUCTION;
   const voice = mode === "professor" ? PROFESSOR_VOICE : LIVE_VOICE;
+  const voiceLanguage = mode === "professor" ? PROFESSOR_VOICE_LANGUAGE : undefined;
   console.log(
     `[Gemini Live] Browser connected (mode: ${mode}${resumeHandle ? ", resuming" : ""})`
   );
@@ -109,6 +111,7 @@ function handleBrowserConnection(browserWs, req) {
       voiceConfig: {
         prebuiltVoiceConfig: { voiceName: voice },
       },
+      ...(voiceLanguage ? { languageCode: voiceLanguage } : {}),
     },
     realtimeInputConfig: {
       turnCoverage: "TURN_INCLUDES_ONLY_ACTIVITY",
