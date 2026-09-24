@@ -41,8 +41,10 @@ export const LM_STUDIO_URL = (process.env.LM_STUDIO_URL || "http://localhost:123
 // reads as calmer and more patient than the brighter voices (e.g. Orus, Puck).
 export const LIVE_VOICE = "Charon";
 
-// Warmer, more articulate voice for the professor / tutor mode.
-export const PROFESSOR_VOICE = "Orus";
+// Warmer, more articulate voice for the professor / tutor mode. Orus stopped
+// carrying the "British accent" instruction in PROFESSOR_SYSTEM_INSTRUCTION
+// under gemini-3.8-live; Puck does.
+export const PROFESSOR_VOICE = "Puck";
 
 // ── Voice activity detection ────────────────────────────────────────────────
 // How long the candidate has to stay quiet before Gemini treats the turn as
