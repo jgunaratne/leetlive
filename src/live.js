@@ -41,6 +41,7 @@ import {
   LIVE_PING_INTERVAL_MS,
 } from "./config.js";
 import { INTERVIEWER_SYSTEM_INSTRUCTION, PROFESSOR_SYSTEM_INSTRUCTION } from "./prompts.js";
+import { practiceLiveInstruction } from "./practice/routes.js";
 
 // Roughly 4s of mic audio at 128ms/chunk. Enough to cover session setup without
 // letting a stalled connect grow the buffer without bound.
@@ -80,9 +81,11 @@ function handleBrowserConnection(browserWs, req) {
   const url = new URL(req.url, "http://localhost");
   const mode = url.searchParams.get("mode") || "interview";
   const resumeHandle = url.searchParams.get("resume") || null;
-  const systemPrompt = mode === "professor"
-    ? PROFESSOR_SYSTEM_INSTRUCTION
-    : INTERVIEWER_SYSTEM_INSTRUCTION;
+  // Practice formats (levels, system design, …) supply their own persona and
+  // private brief; every other mode keeps the original interviewer/professor.
+  const practicePrompt = practiceLiveInstruction(mode, url.searchParams.get("problem"));
+  const systemPrompt = practicePrompt
+    ?? (mode === "professor" ? PROFESSOR_SYSTEM_INSTRUCTION : INTERVIEWER_SYSTEM_INSTRUCTION);
   const voice = mode === "professor" ? PROFESSOR_VOICE : LIVE_VOICE;
   const voiceLanguage = mode === "professor" ? PROFESSOR_VOICE_LANGUAGE : undefined;
   console.log(

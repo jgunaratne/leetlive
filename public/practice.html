@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="LeetLive Practice — timed multi-level exercises, concurrency, debugging, system design, design review and screening calls">
+  <title>LeetLive — Practice Formats</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="practice/practice.css">
+  <script>
+    (function () {
+      try {
+        var stored = localStorage.getItem("leetlive_theme");
+        document.documentElement.dataset.theme =
+          stored || (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+      } catch (e) {
+        document.documentElement.dataset.theme = "dark";
+      }
+    })();
+  </script>
+</head>
+<body class="pr-body">
+  <header class="pr-header">
+    <div class="pr-header-left">
+      <a class="logo pr-logo" href="/" title="Back to LeetCode practice">
+        <span class="logo-icon">/</span>
+        <span class="logo-text">Leet<span class="accent">Live</span></span>
+      </a>
+      <nav id="pr-formats" class="pr-formats" aria-label="Practice format">
+        <button data-format="levels" class="active">Levels</button>
+        <button data-format="concurrency">Concurrency</button>
+        <button data-format="debugging">Debugging</button>
+        <button data-format="system-design">System Design</button>
+        <button data-format="design-review">Design Review</button>
+        <button data-format="screen">Screen</button>
+      </nav>
+    </div>
+    <div class="pr-header-right">
+      <div id="pr-clock" class="pr-clock" title="Time remaining in this format's budget">
+        <span id="pr-clock-time">--:--</span>
+        <button id="pr-clock-toggle" class="pr-btn pr-btn-small">Start</button>
+      </div>
+      <button id="pr-history-toggle" class="btn-icon-label" title="Past attempts">History</button>
+      <a class="btn-icon-label" href="/" style="text-decoration:none" title="Back to LeetCode practice">LeetCode mode</a>
+      <button id="btn-theme" class="btn-theme" title="Switch theme" aria-label="Switch color theme">
+        <svg class="icon-sun" width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3.2" stroke="currentColor" stroke-width="1.3"/><path d="M8 1v1.6M8 13.4V15M15 8h-1.6M2.6 8H1M12.9 3.1l-1.1 1.1M4.2 11.8l-1.1 1.1M12.9 12.9l-1.1-1.1M4.2 4.2L3.1 3.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        <svg class="icon-moon" width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.5 9.6A5.8 5.8 0 0 1 6.4 2.5a5.8 5.8 0 1 0 7.1 7.1z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="pr-main">
+    <!-- Column 1: the problem -->
+    <section class="pr-col pr-col-problem">
+      <div class="pr-col-head">
+        <span id="pr-format-blurb" class="pr-blurb"></span>
+      </div>
+      <div id="pr-setup" class="pr-setup"></div>
+      <div id="pr-problem" class="pr-problem pr-scroll"></div>
+    </section>
+
+    <!-- Column 2: code or notes -->
+    <section class="pr-col pr-col-work">
+      <div class="pr-col-head pr-work-head">
+        <span id="pr-work-title">Code</span>
+        <div class="pr-work-actions">
+          <span id="pr-lang" class="pr-pill hidden"></span>
+          <button id="pr-reset-code" class="pr-btn pr-btn-ghost hidden" title="Restore the starter code">Reset code</button>
+          <button id="pr-run" class="pr-btn pr-btn-primary hidden" title="Run tests (Ctrl/Cmd+Enter)">Run tests</button>
+        </div>
+      </div>
+      <textarea id="pr-editor" class="pr-editor" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="Load or generate a problem to begin."></textarea>
+      <div id="pr-results" class="pr-results pr-scroll hidden"></div>
+    </section>
+
+    <!-- Column 3: interviewer + scorecard -->
+    <section class="pr-col pr-col-side">
+      <div class="pr-col-head pr-voice-head">
+        <span>Interviewer</span>
+        <span id="pr-voice-status" class="pr-pill">Off</span>
+      </div>
+      <div class="pr-voice-actions">
+        <button id="pr-voice" class="pr-btn pr-btn-primary">Start voice</button>
+        <button id="pr-finish" class="pr-btn">End &amp; score</button>
+      </div>
+      <div id="pr-transcript" class="pr-transcript pr-scroll"></div>
+      <div id="pr-scorecard" class="pr-scorecard pr-scroll hidden"></div>
+    </section>
+  </main>
+
+  <!-- History drawer -->
+  <aside id="pr-history" class="pr-history hidden" aria-label="Past attempts">
+    <div class="pr-history-head">
+      <span>Past attempts</span>
+      <button id="pr-history-close" class="pr-btn pr-btn-ghost">Close</button>
+    </div>
+    <div id="pr-history-list" class="pr-scroll"></div>
+  </aside>
+
+  <!-- Import dialog -->
+  <dialog id="pr-import" class="pr-dialog">
+    <form method="dialog" class="pr-dialog-body">
+      <h3>Bring your own problem</h3>
+      <p class="pr-muted">Paste a problem as JSON in the same shape the generator uses. Coding problems need a <code>reference</code> solution so their tests can be verified. See README → Practice formats.</p>
+      <textarea id="pr-import-json" class="pr-import-json" spellcheck="false"></textarea>
+      <div class="pr-dialog-actions">
+        <span id="pr-import-error" class="pr-error"></span>
+        <button value="cancel" class="pr-btn pr-btn-ghost">Cancel</button>
+        <button id="pr-import-submit" value="default" class="pr-btn pr-btn-primary">Import</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="practice/app.js"></script>
+</body>
+</html>

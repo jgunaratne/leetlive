@@ -19,6 +19,7 @@ import { visualizeRouter } from "./routes/visualize.js";
 import { decisionRouter } from "./routes/decision.js";
 import { sessionsRouter } from "./routes/sessions.js";
 import { chatRouter } from "./routes/chat.js";
+import { practiceRouter } from "./practice/routes.js";
 import { attachLiveProxy } from "./live.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -31,6 +32,7 @@ app.use(visualizeRouter);
 app.use(decisionRouter);
 app.use(sessionsRouter);
 app.use(chatRouter);
+app.use(practiceRouter);
 
 // Prefer HTTPS: microphone access (getUserMedia) requires a secure context on
 // any origin other than localhost. If certs/cert.pem + certs/key.pem exist we
